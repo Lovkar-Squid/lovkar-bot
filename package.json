@@ -7,7 +7,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node bot.js",
-    "test": "node test.js"
+    "test": "node test.js && node test-keyring.js"
   },
   "engines": { "node": ">=20" },
   "dependencies": { "discord.js": "^14.16.3" }

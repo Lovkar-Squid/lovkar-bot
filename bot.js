@@ -208,7 +208,7 @@ client.once(Events.ClientReady, async (c) => {
       log(`[startup] ${g.name}: ${e.message}`);
     }
   }
-  log(`triage second opinion: ${process.env.LLM_PROVIDER || 'off'}${DRY ? '   (DRY RUN - nothing is written)' : ''}`);
+  log(`triage second opinion: ${llm.describe()}${DRY ? '   (DRY RUN - nothing is written)' : ''}`);
 });
 
 async function startGuild(g) {

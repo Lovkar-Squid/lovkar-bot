@@ -19,11 +19,22 @@ arguable: every verdict traces back to a word in that file, in English or Sloven
 model can only move a report between the same three buckets, and never below the evidence: a
 post carrying a stack trace stays Critical whatever anything says about it.
 
+`GEMINI_API_KEY` takes one key or a list of them, one per Google project. A key that comes
+back rate-limited or out of quota stands down for an hour and the next one is used; when they
+are all cooling the model pass is skipped and the keywords decide alone — the bot never stops
+tagging because of a quota. Keys are named by position in the log and never printed. Leave
+`GEMINI_MODEL` empty and the bot asks the account which models it has and takes the newest
+flash one, so a renamed or retired model does not break it.
+
+What the model sees is the title and body of a public forum post, nothing else — no member
+list, no private channels, no logs the poster did not paste in themselves.
+
     Critical  the game or server will not run; a world or items lost or corrupted; a dupe
     Major     it runs, but something is properly broken: a feature dead, no progress, bad TPS
     Minor     cosmetic or textual: typos, textures, sounds, tooltips, small UI
 
-`npm test` runs the classifier against a dozen reports that look like real ones. No network.
+`npm test` runs the classifier against a dozen reports that look like real ones, and the key
+ring against a fake rate-limited Gemini. No network in either.
 
 ## Running it
 
@@ -59,9 +70,10 @@ the channel are left exactly as they are.
 
 ## Files
 
-    bot.js       gateway wiring: join → role, new forum post → triage
-    triage.js    the keyword classifier and the floor rules
-    llm.js       the optional model pass; off unless LLM_PROVIDER is set
-    test.js      the classifier's tests
+    bot.js           gateway wiring: join → role, new forum post → triage
+    triage.js        the keyword classifier and the floor rules
+    llm.js           the optional model pass and the Gemini key ring
+    test.js          the classifier's tests
+    test-keyring.js  the key ring's tests
 
 Lovkar & Claude.

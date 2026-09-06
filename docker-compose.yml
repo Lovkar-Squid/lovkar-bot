@@ -24,7 +24,8 @@ services:
       DRY_RUN: "${DRY_RUN:-0}"
       LLM_PROVIDER: "${LLM_PROVIDER:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
-      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-2.0-flash}"
+      GEMINI_MODEL: "${GEMINI_MODEL:-}"
+      GEMINI_COOLDOWN_MIN: "${GEMINI_COOLDOWN_MIN:-60}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       ANTHROPIC_MODEL: "${ANTHROPIC_MODEL:-claude-haiku-4-5}"
     logging:

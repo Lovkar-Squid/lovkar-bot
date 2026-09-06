@@ -1,0 +1,44 @@
+name: lovkar-bot
+
+# One container. It holds no data of its own - everything it needs is on Discord.
+#
+#   cd ~/lovkar-bot && git pull --ff-only && docker compose up -d --build
+#
+# Secrets come from a .env file next to this compose (or from Portainer's stack
+# editor). Nothing secret is committed to git.
+
+services:
+  lovkar-bot:
+    build: .
+    image: lovkar-bot:latest
+    container_name: lovkar-bot
+    restart: unless-stopped
+    environment:
+      DISCORD_TOKEN: "${DISCORD_TOKEN}"
+      GUILD_ID: "${GUILD_ID:-}"
+      MEMBER_ROLE_NAME: "${MEMBER_ROLE_NAME:-Dreamer}"
+      BUG_FORUM_NAME: "${BUG_FORUM_NAME:-bug-reports}"
+      NEEDS_LOG_TAG_NAME: "${NEEDS_LOG_TAG_NAME:-needs log}"
+      BACKFILL_MEMBER_ROLE: "${BACKFILL_MEMBER_ROLE:-0}"
+      TRIAGE_REPLY: "${TRIAGE_REPLY:-1}"
+      DRY_RUN: "${DRY_RUN:-0}"
+      LLM_PROVIDER: "${LLM_PROVIDER:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-2.0-flash}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      ANTHROPIC_MODEL: "${ANTHROPIC_MODEL:-claude-haiku-4-5}"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+x-casaos:
+  main: lovkar-bot
+  description:
+    en_us: "Discord bot for Lovkar's mods: member role on join, severity triage for the bug forum."
+  tagline:
+    en_us: "Tags the bug reports, welcomes the members"
+  developer: "Lovkar"
+  author: "Lovkar & Claude"
+  category: "Games"
+  title:
+    en_us: "Lovkar Bot"

@@ -104,13 +104,15 @@ async function ensureTags(forum) {
     return forum;
   }
   if (DRY) { log(`[tags] (dry run) would add: ${missing.map((t) => t.name).join(', ')}`); return forum; }
+  // the id has to come along: a tag sent back without one is created afresh, which would
+  // quietly unhook every post already wearing it
   const tags = [
-    ...forum.availableTags.map((t) => ({ name: t.name, moderated: t.moderated, emoji: t.emoji })),
+    ...forum.availableTags.map((t) => ({ id: t.id, name: t.name, moderated: t.moderated, emoji: t.emoji })),
     ...missing.map((t) => ({ name: t.name, moderated: true, emoji: { name: t.emoji, id: null } })),
   ];
-  await forum.setAvailableTags(tags, 'severity tags for automatic triage');
+  const updated = await forum.setAvailableTags(tags, 'severity tags for automatic triage');
   log(`[tags] added: ${missing.map((t) => t.name).join(', ')}`);
-  return forum;
+  return updated || forum;
 }
 
 function tagId(forum, name) {
@@ -195,9 +197,9 @@ client.once(Events.ClientReady, async (c) => {
     log(`guild: ${g.name}`);
     const role = memberRole(g);
     log(`  member role "${MEMBER_ROLE}": ${role ? 'found' : 'MISSING'}`);
-    const forum = findForum(g);
+    let forum = findForum(g);
     if (forum) {
-      await ensureTags(await forum.fetch());
+      forum = await ensureTags(await forum.fetch());
       log(`  forum "#${forum.name}": ${forum.availableTags.map((t) => t.name).join(', ')}`);
     } else {
       log(`  forum "#${BUG_FORUM}": MISSING`);

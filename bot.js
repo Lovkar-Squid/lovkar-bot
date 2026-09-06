@@ -110,9 +110,17 @@ async function ensureTags(forum) {
     ...forum.availableTags.map((t) => ({ id: t.id, name: t.name, moderated: t.moderated, emoji: t.emoji })),
     ...missing.map((t) => ({ name: t.name, moderated: true, emoji: { name: t.emoji, id: null } })),
   ];
-  const updated = await forum.setAvailableTags(tags, 'severity tags for automatic triage');
-  log(`[tags] added: ${missing.map((t) => t.name).join(', ')}`);
-  return updated || forum;
+  try {
+    const updated = await forum.setAvailableTags(tags, 'severity tags for automatic triage');
+    log(`[tags] added: ${missing.map((t) => t.name).join(', ')}`);
+    return updated || forum;
+  } catch (e) {
+    // editing a forum's tag list wants Manage Channels, which this bot deliberately does not
+    // have. Not being able to create them is not a reason to stop doing everything else.
+    log(`[tags] could not add ${missing.map((t) => t.name).join(', ')}: ${e.message}` +
+        ' - add those three tags to the forum by hand and I will use them');
+    return forum;
+  }
 }
 
 function tagId(forum, name) {
@@ -194,6 +202,17 @@ client.once(Events.ClientReady, async (c) => {
   log(`logged in as ${c.user.tag}`);
   const guilds = GUILD_ID ? [c.guilds.cache.get(GUILD_ID)].filter(Boolean) : [...c.guilds.cache.values()];
   for (const g of guilds) {
+    try {
+      await startGuild(g);
+    } catch (e) {
+      log(`[startup] ${g.name}: ${e.message}`);
+    }
+  }
+  log(`triage second opinion: ${process.env.LLM_PROVIDER || 'off'}${DRY ? '   (DRY RUN - nothing is written)' : ''}`);
+});
+
+async function startGuild(g) {
+  {
     log(`guild: ${g.name}`);
     const role = memberRole(g);
     log(`  member role "${MEMBER_ROLE}": ${role ? 'found' : 'MISSING'}`);
@@ -206,8 +225,7 @@ client.once(Events.ClientReady, async (c) => {
     }
     if (BACKFILL) await backfill(g);
   }
-  log(`triage second opinion: ${process.env.LLM_PROVIDER || 'off'}${DRY ? '   (DRY RUN - nothing is written)' : ''}`);
-});
+}
 
 client.on(Events.GuildMemberAdd, (m) => giveRole(m, 'joined'));
 client.on(Events.ThreadCreate, (t, isNew) => { if (isNew) onNewPost(t).catch((e) => log('[triage]', e)); });

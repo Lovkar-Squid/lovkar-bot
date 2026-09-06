@@ -53,9 +53,16 @@ const traced = 'x\n    at a.b.C(d:1)\n    at a.b.C(d:2)\n    at a.b.C(d:3)';
 const floored = reconcile(classify('x', traced), { severity: 'minor', reason: 'looks cosmetic' }, traced);
 if (floored.severity !== 'critical') { bad++; console.log('FAIL  the stack-trace floor did not hold'); }
 
+// a report the model calls cosmetic is not nagged for a crash log
+const vague = classify('hm', 'nekaj je cudno pri mahovnem velikanu');
+if (!vague.needsLog) { bad++; console.log('FAIL  a vague report should still want a log'); }
+const cosmetic = reconcile(vague, { severity: 'minor', reason: 'purely cosmetic' }, 'x');
+if (cosmetic.needsLog) { bad++; console.log('FAIL  a cosmetic report should not be nagged for a log'); }
+if (vague.project !== 'The Waking World') { bad++; console.log('FAIL  "mahovni velikan" should map to The Waking World, got ' + vague.project); }
+
 // but it may move an unclear report between the ordinary buckets
 const moved = reconcile(classify('hm', 'the wording is odd'), { severity: 'minor', project: 'Voyager', reason: 'wording' }, 'the wording is odd');
 if (moved.severity !== 'minor' || moved.project !== 'Voyager') { bad++; console.log('FAIL  the model pass was ignored'); }
 
-console.log(bad ? `\n${bad} failing` : `all ${CASES.length + 2} cases pass`);
+console.log(bad ? `\n${bad} failing` : `all ${CASES.length + 5} cases pass`);
 process.exit(bad ? 1 : 0);

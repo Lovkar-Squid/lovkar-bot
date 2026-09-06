@@ -71,10 +71,14 @@ const PROJECTS = [
                         'titan', 'dead letter', 'shrine', 'rune sentinel', 'ember wraith',
                         'drowned keeper', 'hourglass', 'starstone', 'star iron', 'meteor',
                         'cataclysm', 'almanac', 'waker', 'wakers', 'altar', 'ritual', 'sigil',
-                        'horn of waking', 'throne', 'titan gate', 'vault', 'kingdom']],
+                        'horn of waking', 'throne', 'titan gate', 'vault', 'kingdom',
+                        'velikan', 'velikana', 'kolos', 'svetišče', 'svetisce', 'kraljestv',
+                        'meteorit', 'obred', 'oltar', 'runa']],
   ['Colonist Errands', ['colonist errands', 'colonist_errands', 'colonisterrands', 'errand',
-                        'talking colonist', 'voice command', 'citizen', 'colonist']],
-  ['Voyager', ['voyager', 'launchpad', 'launch pad', 'end gate', 'expedition']],
+                        'talking colonist', 'voice command', 'citizen', 'colonist',
+                        'kolonist', 'prebivalec', 'glasovni ukaz']],
+  ['Voyager', ['voyager', 'launchpad', 'launch pad', 'end gate', 'expedition', 'odprava',
+               'ekspedicij']],
   ['Modpack', ['modpack', 'mod pack', 'minecolonies ultimate', 'the pack', 'wmu', 'lmu',
                'lovkar’s minecolonies', "lovkar's minecolonies"]],
 ];
@@ -152,7 +156,9 @@ function reconcile(heuristic, model, text) {
   const merged = {
     severity: model.severity,
     project: model.project || heuristic.project,
-    needsLog: heuristic.needsLog,
+    // the heuristic decided this against its own severity; a report the model has just called
+    // cosmetic should not be nagged for a crash log
+    needsLog: heuristic.needsLog && model.severity !== 'minor',
     why: `model: ${(model.reason || '').slice(0, 160)}`,
   };
   if (floorSeverity(text) === 'critical') {

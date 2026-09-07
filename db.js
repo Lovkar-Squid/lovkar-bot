@@ -110,6 +110,55 @@ const SCHEMA = [
     PRIMARY KEY (giveaway, user)
   );
   `,
+  // v3 - releases, the sneak-peek queue, polls and the suggestion board
+  `
+  CREATE TABLE IF NOT EXISTS releases (
+    id        TEXT PRIMARY KEY,
+    source    TEXT NOT NULL,
+    project   TEXT,
+    name      TEXT,
+    version   TEXT,
+    url       TEXT,
+    published INTEGER,
+    posted_at INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS queue (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind      TEXT    NOT NULL,
+    file      TEXT    NOT NULL,
+    name      TEXT    NOT NULL,
+    bytes     INTEGER NOT NULL DEFAULT 0,
+    caption   TEXT,
+    who       TEXT,
+    added     INTEGER NOT NULL,
+    due       INTEGER,
+    posted_at INTEGER,
+    url       TEXT
+  );
+  CREATE INDEX IF NOT EXISTS queue_waiting ON queue (posted_at, due);
+  CREATE TABLE IF NOT EXISTS polls (
+    id         TEXT PRIMARY KEY,
+    kind       TEXT NOT NULL,
+    channel_id TEXT,
+    question   TEXT,
+    answers    TEXT,
+    host       TEXT,
+    created    INTEGER NOT NULL,
+    ends       INTEGER,
+    result     TEXT
+  );
+  CREATE TABLE IF NOT EXISTS suggestions (
+    id         TEXT PRIMARY KEY,
+    channel_id TEXT,
+    author     TEXT,
+    excerpt    TEXT,
+    url        TEXT,
+    at         INTEGER NOT NULL,
+    up         INTEGER NOT NULL DEFAULT 0,
+    down       INTEGER NOT NULL DEFAULT 0,
+    digested   INTEGER
+  );
+  `,
 ];
 
 /** A book that is not there: every call is a shrug, so no caller needs to check first. */
@@ -128,6 +177,12 @@ const CLOSED = {
   giveawayLive() { return []; }, giveawayDue() { return []; }, giveawayAll() { return []; },
   giveawayEnter() { return false; }, giveawayLeave() { return false; },
   giveawayEntries() { return []; }, giveawayCount() { return 0; }, giveawayClose() {},
+  releaseSeen() { return new Set(); }, releasePosted() {}, releases() { return []; },
+  queueAdd() {}, queueWaiting() { return []; }, queueNext() { return null; },
+  queueTaken() {}, queueDrop() {}, queueList() { return []; },
+  pollNew() {}, pollClose() {}, polls() { return []; },
+  suggestionSeen() { return null; }, suggestionNew() {}, suggestionScore() {},
+  suggestionsSince() { return []; }, suggestionDigested() {},
   stats() { return { ready: false, where: 'nowhere' }; },
   close() {},
 };
@@ -247,10 +302,36 @@ function make(db, where, version, log) {
     gLeave: db.prepare('DELETE FROM entries WHERE giveaway = ? AND user = ?'),
     gEntries: db.prepare('SELECT user, tag, at FROM entries WHERE giveaway = ? ORDER BY at'),
     gCount: db.prepare('SELECT COUNT(*) AS n FROM entries WHERE giveaway = ?'),
+    rSeen: db.prepare('SELECT id FROM releases'),
+    rNew: db.prepare('INSERT INTO releases (id, source, project, name, version, url, published, posted_at) '
+      + 'VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING'),
+    rList: db.prepare('SELECT * FROM releases ORDER BY posted_at DESC LIMIT ?'),
+    qAdd: db.prepare('INSERT INTO queue (kind, file, name, bytes, caption, who, added, due) '
+      + 'VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
+    qWaiting: db.prepare('SELECT * FROM queue WHERE posted_at IS NULL ORDER BY id'),
+    qNext: db.prepare('SELECT * FROM queue WHERE posted_at IS NULL AND (due IS NULL OR due <= ?) '
+      + 'ORDER BY id LIMIT 1'),
+    qTaken: db.prepare('UPDATE queue SET posted_at = ?, url = ? WHERE id = ?'),
+    qDrop: db.prepare('DELETE FROM queue WHERE id = ? AND posted_at IS NULL'),
+    qList: db.prepare('SELECT * FROM queue ORDER BY id DESC LIMIT ?'),
+    pNew: db.prepare('INSERT INTO polls (id, kind, channel_id, question, answers, host, created, ends) '
+      + 'VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
+    pClose: db.prepare('UPDATE polls SET result = ? WHERE id = ?'),
+    pList: db.prepare('SELECT * FROM polls ORDER BY created DESC LIMIT ?'),
+    sGet: db.prepare('SELECT * FROM suggestions WHERE id = ?'),
+    sNew: db.prepare('INSERT INTO suggestions (id, channel_id, author, excerpt, url, at) '
+      + 'VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING'),
+    sScore: db.prepare('UPDATE suggestions SET up = ?, down = ? WHERE id = ?'),
+    sSince: db.prepare('SELECT * FROM suggestions WHERE at >= ? ORDER BY (up - down) DESC, up DESC LIMIT ?'),
+    sDigested: db.prepare('UPDATE suggestions SET digested = ? WHERE id = ?'),
     size: db.prepare('SELECT (SELECT COUNT(*) FROM log) AS log, (SELECT COUNT(*) FROM events) AS events, '
       + '(SELECT COUNT(*) FROM packs) AS packs, (SELECT COUNT(*) FROM videos) AS videos, '
       + '(SELECT COUNT(*) FROM reports) AS reports, '
-      + '(SELECT COUNT(*) FROM giveaways) AS giveaways'),
+      + '(SELECT COUNT(*) FROM giveaways) AS giveaways, '
+      + '(SELECT COUNT(*) FROM releases) AS releases, '
+      + "(SELECT COUNT(*) FROM queue WHERE posted_at IS NULL) AS queued, "
+      + '(SELECT COUNT(*) FROM polls) AS polls, '
+      + '(SELECT COUNT(*) FROM suggestions) AS suggestions'),
   };
 
   // One complaint per kind of failure: a database that has gone bad must not fill the log with it.
@@ -365,6 +446,47 @@ function make(db, where, version, log) {
       q.gClose.run(String(state), Date.now(), drawn ? JSON.stringify(drawn) : null, String(id));
     }),
 
+    // ---- releases -------------------------------------------------------------------------
+    releaseSeen: safe('reading the releases', () => new Set(q.rSeen.all().map((r) => r.id)), new Set()),
+    releasePosted: safe('writing a release', (r) => {
+      q.rNew.run(String(r.id), String(r.source), r.project || null, r.name || null,
+        r.version || null, r.url || null, Number(r.published) || null, Date.now());
+    }),
+    releases: safe('listing the releases', (n = 20) => q.rList.all(n), []),
+
+    // ---- the queue ------------------------------------------------------------------------
+    queueAdd: safe('queueing a picture', (p) => {
+      q.qAdd.run(String(p.kind), String(p.file), String(p.name), Number(p.bytes) || 0,
+        p.caption || null, p.who || null, Date.now(), Number(p.due) || null);
+    }),
+    queueWaiting: safe('reading the queue', () => q.qWaiting.all(), []),
+    queueNext: safe('taking from the queue', (now = Date.now()) => q.qNext.get(now) || null, null),
+    queueTaken: safe('marking one posted', (id, url) => { q.qTaken.run(Date.now(), url || null, Number(id)); }),
+    queueDrop: safe('dropping one from the queue', (id) => { q.qDrop.run(Number(id)); }),
+    queueList: safe('listing the queue', (n = 50) => q.qList.all(n), []),
+
+    // ---- polls: Discord counts the votes, this only remembers that one was asked ------------
+    pollNew: safe('writing a poll', (p) => {
+      q.pNew.run(String(p.id), String(p.kind), p.channelId || null, p.question || null,
+        JSON.stringify(p.answers || []), p.host || null, Date.now(), Number(p.ends) || null);
+    }),
+    pollClose: safe('writing a poll result', (id, result) => {
+      q.pClose.run(JSON.stringify(result || []), String(id));
+    }),
+    polls: safe('listing the polls', (n = 20) => q.pList.all(n), []),
+
+    // ---- the suggestion board ---------------------------------------------------------------
+    suggestionSeen: safe('reading a suggestion', (id) => q.sGet.get(String(id)) || null, null),
+    suggestionNew: safe('writing a suggestion', (s2) => {
+      q.sNew.run(String(s2.id), s2.channelId || null, s2.author || null, s2.excerpt || null,
+        s2.url || null, Number(s2.at) || Date.now());
+    }),
+    suggestionScore: safe('scoring a suggestion', (id, up, down) => {
+      q.sScore.run(Number(up) || 0, Number(down) || 0, String(id));
+    }),
+    suggestionsSince: safe('reading the suggestions', (since, n = 5) => q.sSince.all(Number(since), n), []),
+    suggestionDigested: safe('marking a suggestion digested', (id) => { q.sDigested.run(Date.now(), String(id)); }),
+
     stats: safe('measuring itself', () => {
       let bytes = 0;
       try { bytes = fs.statSync(where).size; } catch { /* :memory: has no size */ }
@@ -417,6 +539,23 @@ module.exports = {
   giveawayEntries: (id) => book.giveawayEntries(id),
   giveawayCount: (id) => book.giveawayCount(id),
   giveawayClose: (id, state, drawn) => book.giveawayClose(id, state, drawn),
+  releaseSeen: () => book.releaseSeen(),
+  releasePosted: (r) => book.releasePosted(r),
+  releases: (n) => book.releases(n),
+  queueAdd: (p) => book.queueAdd(p),
+  queueWaiting: () => book.queueWaiting(),
+  queueNext: (now) => book.queueNext(now),
+  queueTaken: (id, url) => book.queueTaken(id, url),
+  queueDrop: (id) => book.queueDrop(id),
+  queueList: (n) => book.queueList(n),
+  pollNew: (p) => book.pollNew(p),
+  pollClose: (id, result) => book.pollClose(id, result),
+  polls: (n) => book.polls(n),
+  suggestionSeen: (id) => book.suggestionSeen(id),
+  suggestionNew: (s) => book.suggestionNew(s),
+  suggestionScore: (id, up, down) => book.suggestionScore(id, up, down),
+  suggestionsSince: (since, n) => book.suggestionsSince(since, n),
+  suggestionDigested: (id) => book.suggestionDigested(id),
   stats: () => book.stats(),
   close: () => book.close(),
 };

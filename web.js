@@ -18,6 +18,8 @@
 
 const packs = require('./packs');
 const giveaways = require('./giveaways');
+const polls = require('./polls');
+const queue = require('./queue');
 
 const http = require('node:http');
 const crypto = require('node:crypto');
@@ -106,6 +108,8 @@ function start(client, opts) {
     log, recent, stats, retriage, llm,
     db = require('./db'),
     gw = opts.giveaways || giveaways,
+    pl = opts.polls || polls,
+    qu = opts.queue || queue,
     port = Number(process.env.DASH_PORT || 8081),
     guildId = process.env.GUILD_ID,
     clientId = process.env.DISCORD_CLIENT_ID,
@@ -297,7 +301,25 @@ function start(client, opts) {
           videos: db.videos(15),
           reports: db.reports(20),
           events: db.events(40),
+          polls: pl.list(15),
+          releases: db.releases(10),
+          queue: qu.list(40),
         });
+      }
+
+      if (req.method === 'POST' && path.startsWith('/api/queue/')) {
+        if (req.headers['x-sentinel'] !== '1') return send(res, 403, { error: 'bad request' });
+        const [, , , id, what] = path.split('/');
+        try {
+          if (what === 'drop') return send(res, 200, { ok: true, ...qu.drop(id, log) });
+          if (what === 'now') {
+            const out = await qu.tick(g, { log, force: true });
+            return send(res, 200, { ok: true, posted: out ? out.name : null });
+          }
+        } catch (e) {
+          return send(res, 400, { error: e.message });
+        }
+        return send(res, 404, { error: 'no such thing here' });
       }
 
       // ---- the two things that write ---------------------------------------------------------
@@ -392,6 +414,14 @@ function start(client, opts) {
           return send(res, 400, { error: e.message });
         }
         try {
+          if (form.fields.queue === '1') {
+            const out = qu.add(form.fields.kind, form.files,
+              { caption: form.fields.caption, who: user.name, log });
+            return send(res, 200, {
+              ok: true, queued: out.queued, waiting: out.waiting,
+              channel: packs.about(form.fields.kind).channel, files: out.queued, urls: [],
+            });
+          }
           const out = await packs.post(g, form.fields.kind, form.files, form.fields.caption,
             user.name, log);
           return send(res, 200, { ok: true, ...out });
@@ -523,6 +553,10 @@ ul{margin:8px 0 0;padding-left:18px}
     <input type="file" name="files" multiple accept="image/*,video/mp4,video/webm">
     <p style="margin:16px 0 6px" class="dim small">What to say above them (optional).</p>
     <textarea name="caption" placeholder="Leave it empty and the pack says its own line."></textarea>
+    <label class="pick" style="margin-top:14px"><input type="checkbox" name="queue" value="1">
+      <span><b>Put them in the queue instead</b><br><span class="dim small">One goes out every
+      ${queue.EVERY_HOURS} hours, between ${queue.FROM_HOUR}:00 and ${queue.TO_HOUR}:00. Twenty
+      screenshots taken in one evening become a month of sneak peeks.</span></span></label>
     <p style="margin-top:16px"><button class="btn" id="go">Post it</button></p>
   </form>
   <div id="out"></div>
@@ -540,8 +574,10 @@ f.addEventListener('submit', async (e) => {
     const r = await fetch('/api/packs', { method: 'POST', headers: { 'x-sentinel': '1' }, body: data });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || 'it did not go');
-    out.innerHTML = '<span class="ok">Posted ' + j.files + ' to #' + j.channel + '.</span><ul>' +
-      j.urls.map((u) => '<li><a href="' + u + '">' + u + '</a></li>').join('') + '</ul>';
+    out.innerHTML = j.queued
+      ? '<span class="ok">' + j.queued + ' in the queue — ' + j.waiting + ' waiting to go out.</span>'
+      : '<span class="ok">Posted ' + j.files + ' to #' + j.channel + '.</span><ul>' +
+        j.urls.map((u) => '<li><a href="' + u + '">' + u + '</a></li>').join('') + '</ul>';
     f.reset();
   } catch (err) {
     out.innerHTML = '<span class="bad">' + err.message + '</span>';
@@ -840,12 +876,35 @@ async function drawHistory() {
       '<a href="' + esc(v.url || '#') + '" target="_blank" rel="noreferrer">' + esc(v.title || v.id) + '</a>',
       '<span class="dim small">' + ago(v.posted_at) + '</span>',
     ]) + '</div>' +
+    '<div class="card"><h3 style="margin:0 0 12px">Polls</h3>' + rows(d.polls || [], p => [
+      '<b>' + esc(p.question) + '</b><div class="small dim">' + esc(p.kind) + (p.host ? ' · by ' + esc(p.host) : '') + '</div>',
+      p.result && p.result.length
+        ? p.result.map(r => esc(r.text) + ' <b>' + r.votes + '</b>').join(' · ')
+        : '<span class="dim small">still open</span>',
+      '<span class="dim small">' + ago(p.created) + '</span>',
+    ]) + '</div>' +
+    '<div class="card"><h3 style="margin:0 0 12px">Releases</h3>' + rows(d.releases || [], r => [
+      '<a href="' + esc(r.url || '#') + '" target="_blank" rel="noreferrer">' + esc((r.name || r.project) + ' ' + (r.version || '')) + '</a>',
+      '<span class="dim small">' + esc(r.source) + '</span>',
+      '<span class="dim small">' + ago(r.posted_at) + '</span>',
+    ]) + '</div>' +
+    '<div class="card"><h3 style="margin:0 0 12px">The queue</h3>' + rows((d.queue || []).filter(q => !q.posted_at), q => [
+      esc(q.name) + '<div class="small dim">' + esc(q.kind === 'bts' ? 'behind the scenes' : 'sneak peek') + (q.caption ? ' · ' + esc(q.caption.slice(0, 60)) : '') + '</div>',
+      '<span class="dim small">due ' + (q.due ? ago(q.due) : 'now') + '</span>',
+      '<button class="btn ghost drop" data-q="' + q.id + '" style="padding:4px 10px;font-size:12px">take out</button>',
+    ]) + '</div>' +
     '<div class="card"><h3 style="margin:0 0 12px">What happened</h3>' + rows(d.events, e => [
       '<span class="tag ' + esc(e.kind) + '">' + esc(e.kind) + '</span>',
       esc(e.subject || ''),
       '<span class="dim small">' + esc(e.detail || '') + '</span>',
       '<span class="dim small">' + ago(e.at) + '</span>',
     ]) + '</div>';
+
+  view.querySelectorAll('button.drop').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    await post('/api/queue/' + b.dataset.q + '/drop');
+    draw();
+  });
 }
 
 async function draw() {

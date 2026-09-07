@@ -30,6 +30,14 @@ const web = require('./web');
 const youtube = require('./youtube');
 const db = require('./db');
 const giveaways = require('./giveaways');
+const commands = require('./commands');
+const polls = require('./polls');
+const queue = require('./queue');
+const releases = require('./releases');
+const suggestions = require('./suggestions');
+const milestones = require('./milestones');
+const rolemenu = require('./rolemenu');
+const welcome = require('./welcome');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
@@ -60,6 +68,9 @@ const BOOSTER_CHANNELS = (process.env.BOOSTER_CHANNELS || 'dev-builds,behind-the
 // what a member can see: at most N people wear it.
 const OG_ROLE = process.env.OG_ROLE_NAME || 'OG';
 const OG_LIMIT = Number(process.env.OG_LIMIT || 200);
+// The "ping me about" menu is put up at startup; it edits the message it made last time, so this
+// is idempotent. Set it to 0 and it only ever goes up when somebody runs /roles.
+const ROLE_MENU_AUTO = process.env.ROLE_MENU_AUTO !== '0';
 
 const client = new Client({
   intents: [
@@ -67,8 +78,11 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    // the suggestion board counts 👍 and 👎, which arrive as reactions on messages the bot has
+    // very often never seen - hence the partials as well as the intent
+    GatewayIntentBits.GuildMessageReactions,
   ],
-  partials: [Partials.Channel, Partials.Message],
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
 });
 
 // The log the dashboard shows. Five hundred lines is a few days of a quiet server and costs
@@ -91,7 +105,8 @@ if (db.ready) RECENT.splice(0, RECENT.length, ...db.lines(RING));
 // What the dashboard puts on its cards. The totals are everything the bot has ever done, read back
 // out of the book; `since` is only this run, which is the number that used to be shown.
 const counters = { joined: 0, triaged: 0, rolesGiven: 0, retriaged: 0, ogGiven: 0,
-  videosPosted: 0, packsPosted: 0 };
+  videosPosted: 0, packsPosted: 0, releasesPosted: 0, giveaways: 0, pollsAsked: 0,
+  queuePosted: 0, milestones: 0, welcomed: 0, bugsFiled: 0 };
 const since = { ...counters };
 Object.assign(counters, db.counters());
 const count = (name, by = 1) => {
@@ -386,12 +401,36 @@ client.once(Events.ClientReady, async (c) => {
   }
   log(`triage second opinion: ${llm.describe()}${DRY ? '   (DRY RUN - nothing is written)' : ''}`);
   web.start(c, {
-    log, llm, retriage, db, giveaways,
+    log, llm, retriage, db, giveaways, polls, queue, rolemenu,
     recent: () => [...RECENT],
     stats: () => ({ ...counters, ...db.counters(), since: { ...since }, book: db.stats() }),
   });
   // Anything that ran out of time while the bot was away is drawn the moment it is back.
   giveaways.watch(c, { log });
+  polls.watch(c, { log });
+
+  // The four that speak on their own initiative. A dry run must stay quiet, or testing the bot
+  // means posting to the server.
+  if (DRY) {
+    log('[watchers] DRY RUN - the queue, the digest, the milestones and the releases stay quiet');
+  } else {
+    queue.watch(c, { log, guildId: GUILD_ID });
+    suggestions.start(c, { log, guildId: GUILD_ID });
+    milestones.start(c, { log, guildId: GUILD_ID });
+    releases.start(c, { log, guildId: GUILD_ID, onPosted: () => count('releasesPosted') })
+      .catch((e) => log('[release]', e.message));
+  }
+
+  // The slash commands go up per guild, which is instant, so a change here is live on the next
+  // restart rather than in an hour's time.
+  for (const g of guilds) {
+    await commands.register(g, log).catch((e) => log('[commands]', e.message));
+    if (ROLE_MENU_AUTO) {
+      await rolemenu.post(g, { log }).then(
+        (out) => out && log(`[roles] the menu is ${out.edited ? 'up to date' : 'up'}: ${out.url}`),
+        (e) => log('[roles]', e.message));
+    }
+  }
 
   if (DRY) {
     log('[youtube] DRY RUN - not watching');
@@ -430,6 +469,7 @@ async function startGuild(g) {
 client.on(Events.GuildMemberAdd, async (m) => {
   db.event('join', m.user.tag, `${m.guild.memberCount} members`);
   count('joined');
+  await welcome.join(m, { log }).catch((e) => log('[welcome]', e.message));
   await giveRole(m, 'joined');
   await giveOg(m, await ogRole(m.guild)).catch((e) => log('[og]', e.message));
 });
@@ -438,10 +478,32 @@ client.on(Events.GuildRoleCreate, (r) => boosterPerks(r.guild).catch((e) => log(
 client.on(Events.GuildUpdate, (_old, g) => boosterPerks(g).catch((e) => log('[boost]', e.message)));
 client.on(Events.ThreadCreate, (t, isNew) => { if (isNew) onNewPost(t).catch((e) => log('[triage]', e)); });
 
-// The only button the bot has: entering a giveaway, and pressing it again to leave one.
+// Everything that arrives from a click or a typed command. The two button prefixes own themselves;
+// anything else is a slash command or the bug wizard, and commands.js sorts it out.
 client.on(Events.InteractionCreate, (i) => {
-  if (!i.isButton() || !i.customId.startsWith('gw:')) return;
-  giveaways.press(i, log).catch((e) => log('[giveaway]', e.message));
+  if (i.isButton()) {
+    if (i.customId.startsWith('gw:')) {
+      giveaways.press(i, log).catch((e) => log('[giveaway]', e.message));
+      return;
+    }
+    if (i.customId.startsWith('role:')) {
+      rolemenu.press(i, log).catch((e) => log('[roles]', e.message));
+      return;
+    }
+    return;
+  }
+  commands.handle(i, { log }).catch((e) => log('[commands]', e.message));
+});
+
+// The suggestion board: 👍 and 👎 put on every idea as it arrives, and the score kept up to date.
+client.on(Events.MessageCreate, (m) => {
+  suggestions.onMessage(m, log).catch?.((e) => log('[suggest]', e.message));
+});
+client.on(Events.MessageReactionAdd, (r, u) => {
+  suggestions.onReaction(r, u, log).catch?.((e) => log('[suggest]', e.message));
+});
+client.on(Events.MessageReactionRemove, (r, u) => {
+  suggestions.onReaction(r, u, log).catch?.((e) => log('[suggest]', e.message));
 });
 
 client.on(Events.Error, (e) => log('[gateway]', e.message));

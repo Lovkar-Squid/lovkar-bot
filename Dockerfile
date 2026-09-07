@@ -3,10 +3,16 @@ FROM node:22-alpine
 ENV NODE_ENV=production
 WORKDIR /app
 
+# The welcome card draws the member's name, and skia brings no fonts of its own: with none
+# installed every string measures zero and the card comes out wordless. Noto covers Slovene's
+# carons as well as English, and the emoji set is what makes a name with a 🐙 in it draw.
+RUN apk add --no-cache font-noto font-noto-emoji
+
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev --no-audit --no-fund
 
-COPY bot.js web.js triage.js llm.js youtube.js packs.js pack.js db.js giveaways.js giveaway.js ./
+COPY bot.js web.js triage.js llm.js youtube.js packs.js pack.js db.js giveaways.js giveaway.js \
+     commands.js polls.js queue.js releases.js suggestions.js milestones.js rolemenu.js welcome.js ./
 
 # COPY keeps whatever mode the files had on the way in, and a copy that arrived over scp
 # from a Windows mount arrives 0700 - which the unprivileged user below cannot read.

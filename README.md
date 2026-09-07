@@ -1,7 +1,8 @@
 # Sentinel — Lovkar's Discord bot
 
-Seven small jobs, all of them things Discord itself cannot do without a bot - a dashboard to
-watch them from, and one small file to remember what Discord cannot be asked about:
+A dozen small jobs, all of them things Discord itself cannot do without a bot - a dashboard to
+watch them from, slash commands to run them from inside Discord, and one small file to remember
+what Discord cannot be asked about:
 
 1. **The member role.** Everyone who joins gets `Dreamer`. Discord only assigns roles
    automatically through Onboarding questions, which people can skip.
@@ -32,6 +33,27 @@ watch them from, and one small file to remember what Discord cannot be asked abo
    to take their name back out; when the time is up the bot draws the winners itself and says so
    in the channel. The countdown is Discord's own relative timestamp, so it ticks in everyone's
    client without the bot editing anything.
+
+8. **Polls.** Discord's own poll, asked in one line. Two kinds, because supporters and the wider
+   server are not always being asked the same thing: `#polls` for the people who pay for it,
+   `#community-polls` for everybody. Discord counts the votes; the book keeps what was said after
+   the message is gone.
+
+9. **Releases.** A new file on Modrinth or CurseForge is announced in `#announcements` the same
+   way a new video is, with its changelog, and published to the servers that follow.
+
+10. **The suggestion board.** Every idea posted in `#ideas-and-feedback` gets its 👍 and 👎 the
+    moment it arrives, so nobody has to add them, and once a week the best five are collected
+    into one message. A week with nothing above zero posts nothing at all.
+
+11. **The queue.** Twenty screenshots taken in one good evening, dropped on the dashboard at
+    once, become a sneak peek every three days for a month. They wait on the same volume as the
+    book, so a redeploy cannot lose them.
+
+12. **The small courtesies.** A welcome card with the new member's name drawn across a picture
+    from the mod; the round numbers announced once each and never again; and a row of buttons
+    that hand out "ping me about releases / sneak peeks / streams / giveaways", so `@everyone` is
+    never the only way to reach people.
 
 It reads and it tags. It never deletes, kicks, bans, or edits anyone else's messages, and it
 leaves alone any post a human has already given a severity tag.
@@ -66,6 +88,27 @@ Two rules keep it honest:
 
 `node test-db.js` covers it end to end - what it keeps, what survives a reopen, and that a bot
 with nowhere to write still runs.
+
+## Slash commands
+
+Everything above can be run from inside Discord. The commands are registered per guild, which is
+instant, so a change is live on the next restart rather than in an hour's time.
+
+    /giveaway start|end|reroll|cancel|list      staff
+    /poll ask|close|list                        staff
+    /pack <kind> <pictures…> [queue: true]      staff
+    /queue list|now|drop                        staff
+    /roles [channel]                            staff
+    /version                                    everyone
+    /bug                                        everyone
+
+`/bug` is the one that earns its keep. It opens a form asking for the one-line summary, what
+happened, the mod version, the loader version and any other mods - and only then makes the forum
+post, already filled in. The triage tags it as usual. Nearly every "needs log" reply the bot used
+to write was asking for something this form asks for up front.
+
+`/giveaway end|reroll|cancel` take a giveaway by name, not by id: the id field autocompletes from
+what is actually running.
 
 ## Giveaways
 
@@ -158,6 +201,67 @@ Run it on its own to see what it would post, with no Discord connection and noth
 ```
 node youtube.js
 ```
+
+## Polls
+
+    /poll ask question:"Which cataclysm next?" answers:"🌋 Volcano | 🌪 Tornado | ☄ Meteor" who:Everyone hours:48
+
+Discord has had a real poll of its own since 2024 - it renders properly on every client, counts
+server-side, hides the tally until you have voted and closes itself at the hour you asked for.
+Building one out of reactions would be worse in every way, so this does not: it sends Discord's
+poll and stays out of the way. What Discord will not do is remember, so when the poll closes the
+final numbers are copied into the book, where they outlive the message.
+
+Answers are separated by `|`. An answer may start with an emoji, which becomes the answer's emoji
+rather than part of its text.
+
+## Releases
+
+Set `RELEASE_MODRINTH` and `RELEASE_CURSEFORGE` and a new file on either is announced with its
+changelog. Modrinth's API is open; CurseForge's is not, so that side goes through the same public
+proxy the project already uses elsewhere, and a proxy that is down is one line in the log rather
+than a watcher that stops. `RELEASE_TYPES` decides whether alpha builds are worth announcing -
+they usually are not.
+
+Nothing older than `RELEASE_MAX_AGE_HOURS` is ever posted, and everything already in the feed at
+the first start is marked seen, so switching this on cannot dump the back catalogue into
+`#announcements`.
+
+## The suggestion board
+
+The two reactions go on automatically, which is the whole trick: a suggestion with no reactions
+gets none, and a suggestion with two gets fifty. Bots, one-word replies and bare links are left
+alone. The score is recounted from the message rather than incremented, so a duplicate event or a
+day of downtime cannot make it drift.
+
+The weekly digest posts the best five of the last seven days. A week where nothing scored above
+zero posts nothing - an empty "top ideas" is worse than silence - but the clock still winds on,
+so the first upvote of the new week does not fire a digest of one.
+
+## The queue
+
+    /pack kind:sneak picture:… queue:true
+
+or the checkbox on the dashboard's Packs page. One goes out every `QUEUE_EVERY_HOURS` (72), only
+between `QUEUE_FROM_HOUR` and `QUEUE_TO_HOUR`, so nothing is posted at four in the morning. The
+first one goes out at once - dropping twenty pictures should show one straight away, not leave
+the channel silent for three days.
+
+The files wait in `/data/queue`, beside the book and on the same volume, because a picture
+waiting three weeks has to survive every redeploy in between. Posting goes through `packs.js`
+like anything else, so there is one code path to the channel.
+
+## The welcome card
+
+`@napi-rs/canvas` draws a 1000×360 card: the background from `/data/welcome-bg.jpg`, a scrim so
+the text always reads, the member's avatar in a gold ring, and their name shrunk to fit beside
+it. It is an **optional** dependency and the module says so: if it is not installed, or the
+background is missing, or the avatar will not fetch, the member is still welcomed - with an
+embed, or with an initial in a circle. Nobody is ever not welcomed because a drawing library was
+not there.
+
+The image installs `font-noto` and `font-noto-emoji`, because skia ships no fonts of its own and
+without them every string measures zero and the card comes out wordless.
 
 ## How the triage decides
 

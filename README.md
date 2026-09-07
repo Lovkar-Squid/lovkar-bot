@@ -27,6 +27,16 @@ to watch them from:
 It reads and it tags. It never deletes, kicks, bans, or edits anyone else's messages, and it
 leaves alone any post a human has already given a severity tag.
 
+## Where the settings live
+
+The server's `docker-compose.yml` used to carry every setting inline, secrets included — a file
+that git tracks, one `git add -A` away from publishing a bot token. `envfile.py` moves that block
+out: the values go into `.env.compose` (mode 0600, ignored by git along with every other `.env*`),
+and the compose file keeps one `env_file:` line. Run it once in the directory that has the compose
+file; it never prints a value, only the key names it moved. There is a
+`docker-compose.yml.before-envfile` left beside it, which still has the old inline block in it —
+delete that once you are happy.
+
 ## The YouTube watcher
 
 `youtube.js` reads the channel's public Atom feed every `YOUTUBE_POLL_MINUTES`. No API key, no

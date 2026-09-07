@@ -1,12 +1,17 @@
 # Sentinel — Lovkar's Discord bot
 
-Two small jobs, both of them things Discord itself cannot do without a bot:
+Three small jobs, all of them things Discord itself cannot do without a bot:
 
 1. **The member role.** Everyone who joins gets `Dreamer`. Discord only assigns roles
    automatically through Onboarding questions, which people can skip.
 2. **Bug triage.** Every new post in `#bug-reports` gets a severity tag (`Critical` /
    `Major` / `Minor`), the tag for whichever project it is about, and `needs log` when
    the post has no log in it — plus a short reply saying what is missing.
+3. **What a boost unlocks.** Discord does not create the `Server Booster` role until somebody
+   actually boosts, so the channels a boost is meant to open cannot be configured beforehand.
+   The bot grants that role `View Channel` on `BOOSTER_CHANNELS` at startup and whenever the
+   roles change — so the perk turns itself on with the first boost, and channels named there
+   that do not exist yet are simply skipped.
 
 It reads and it tags. It never deletes, kicks, bans, or edits anyone else's messages, and it
 leaves alone any post a human has already given a severity tag.
@@ -61,7 +66,8 @@ then set it back to `0`.
 
 * Privileged intents: **Server Members** and **Message Content** (Developer Portal → Bot).
 * Permissions: Manage Roles, Manage Threads, Send Messages, Send Messages in Threads,
-  Read Message History.
+  Read Message History. Manage Roles is also what lets it set the booster channel permissions;
+  it does **not** need Manage Channels for that, only to create a channel (which it never does).
 * Its own role must sit **above** `Dreamer` in Server Settings → Roles, or it cannot hand it
   out. The bot says so in its log if it cannot.
 

@@ -5,6 +5,10 @@
  *      Onboarding, which rearranges the whole first impression of the server).
  *   2. Every new post in the bug forum gets a severity tag, a project tag, and - if it has no
  *      log - a nudge to attach one.
+ *   3. Server boosters can see the channels boosting is supposed to unlock. Discord does not
+ *      create the "Server Booster" role until somebody actually boosts, so the permission cannot
+ *      be set in advance by hand - the bot watches for the role and grants it the moment it
+ *      exists, and every time it starts.
  *
  * It reads. It tags. It never deletes anything, never kicks anyone, and never touches a post
  * a human has already tagged by hand.
@@ -12,7 +16,7 @@
 
 'use strict';
 
-const { Client, GatewayIntentBits, Partials, ChannelType, Events } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, ChannelType, Events, PermissionsBitField } = require('discord.js');
 const triage = require('./triage');
 const llm = require('./llm');
 
@@ -34,6 +38,11 @@ const SEVERITY_TAGS = [
   { key: 'minor', name: 'Minor', emoji: '🟡' },
 ];
 const NEEDS_LOG_TAG = process.env.NEEDS_LOG_TAG_NAME || 'needs log';
+
+// Channels a boost unlocks. Missing ones are skipped, so the list can name a channel that does
+// not exist yet without anything breaking.
+const BOOSTER_CHANNELS = (process.env.BOOSTER_CHANNELS || 'dev-builds,behind-the-scenes,sneak-peek')
+  .split(',').map((s) => s.trim()).filter(Boolean);
 
 const client = new Client({
   intents: [
@@ -196,6 +205,35 @@ async function onNewPost(thread) {
   }
 }
 
+// ---- what a boost unlocks ------------------------------------------------------------------
+
+/**
+ * Give the Server Booster role sight of the channels a boost is meant to open.
+ *
+ * <p>Discord creates that role lazily - it does not exist at all while the server has no boosts -
+ * so the permission cannot be set up in the UI beforehand. Run this at startup and whenever the
+ * roles change and the perk turns itself on with the first boost. Only ViewChannel is granted, and
+ * only where it is not granted already, so running it repeatedly costs nothing and a permission
+ * somebody set by hand is never overwritten. Channels that do not exist yet are skipped.</p>
+ */
+async function boosterPerks(g) {
+  const role = g.roles.premiumSubscriberRole;
+  if (!role) return;                                     // nobody has boosted yet
+  for (const name of BOOSTER_CHANNELS) {
+    const ch = g.channels.cache.find((c) => c.name === name && c.permissionOverwrites);
+    if (!ch) { log(`  boost: no channel #${name} (skipped)`); continue; }
+    const has = ch.permissionOverwrites.cache.get(role.id);
+    if (has && has.allow.has(PermissionsBitField.Flags.ViewChannel)) continue;
+    if (DRY) { log(`  boost: would open #${name} to ${role.name}`); continue; }
+    try {
+      await ch.permissionOverwrites.edit(role, { ViewChannel: true }, { reason: 'server boosters see the boosted channels' });
+      log(`  boost: #${name} opened to ${role.name}`);
+    } catch (e) {
+      log(`  boost: could not open #${name}: ${e.message}`);
+    }
+  }
+}
+
 // ---- wiring --------------------------------------------------------------------------------
 
 client.once(Events.ClientReady, async (c) => {
@@ -223,11 +261,15 @@ async function startGuild(g) {
     } else {
       log(`  forum "#${BUG_FORUM}": MISSING`);
     }
+    await boosterPerks(g);
     if (BACKFILL) await backfill(g);
   }
 }
 
 client.on(Events.GuildMemberAdd, (m) => giveRole(m, 'joined'));
+// the booster role appears the moment the first boost lands, and again if it is ever recreated
+client.on(Events.GuildRoleCreate, (r) => boosterPerks(r.guild).catch((e) => log('[boost]', e.message)));
+client.on(Events.GuildUpdate, (_old, g) => boosterPerks(g).catch((e) => log('[boost]', e.message)));
 client.on(Events.ThreadCreate, (t, isNew) => { if (isNew) onNewPost(t).catch((e) => log('[triage]', e)); });
 
 client.on(Events.Error, (e) => log('[gateway]', e.message));

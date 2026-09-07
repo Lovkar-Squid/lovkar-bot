@@ -249,6 +249,8 @@ Object.assign(rel.CONF, was);
 
 // ---- the first look at a server must be silent ---------------------------------------------------
 if (rel.SEEDED !== 'releases:seeded') fail('the seeded key changed name: ' + rel.SEEDED);
+if (rel.KNOWN !== 'releases:known') fail('the known-ids key changed name: ' + rel.KNOWN);
+if (rel.SEEDED === rel.KNOWN) fail('the two marks must be separate keys');
 
 console.log(bad ? `\n${bad} failing` : 'all release cases pass');
 process.exit(bad ? 1 : 0);

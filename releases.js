@@ -42,6 +42,14 @@ const db = require('./db');
  * instead. Clearing this key in the book makes the next start seed itself again.</p>
  */
 const SEEDED = 'releases:seeded';
+/**
+ * The ids that were already out on that first look.
+ *
+ * <p>Marking them seen only in memory is not enough: the next restart would find them again,
+ * and the age cutoff is no help for a build published yesterday. They are not written to the
+ * releases table, because that table means "announced" and these never were.</p>
+ */
+const KNOWN = 'releases:known';
 
 /** Modrinth's version list: public, no key, no quota worth worrying about at one call a quarter-hour. */
 const MODRINTH = 'https://api.modrinth.com/v2/project/';
@@ -473,6 +481,12 @@ async function start(client, { log, guildId, onPosted } = {}) {
   // What went out before. There is nothing in a release announcement that Discord could give back
   // as an id, so unlike the YouTube watcher the book is the record and not merely a shortcut.
   for (const id of db.releaseSeen()) seen.add(id);
+  // ...and what was already out when the watcher was first switched on, which was never announced
+  // and must never be. A build published yesterday is inside the age cutoff, so the cutoff alone
+  // would let it through on the next restart.
+  try {
+    for (const id of JSON.parse(db.get(KNOWN) || '[]')) seen.add(id);
+  } catch { /* a mangled list is no reason not to run */ }
 
   say(`[releases] watching ${describe(where)} in #${channel.name}, every ${CONF.pollMinutes}m`
     + `, ${types ? [...types].join('/') : 'every kind of build'} announced`
@@ -496,6 +510,7 @@ async function start(client, { log, guildId, onPosted } = {}) {
       if (!db.get(SEEDED)) {
         for (const e of entries) seen.add(e.id);
         db.set(SEEDED, new Date().toISOString());
+        db.set(KNOWN, JSON.stringify([...seen]));
         say(`[releases] first look: ${entries.length} build${entries.length === 1 ? '' : 's'} `
           + 'already out, all noted without a word - only what appears from now on is announced');
         return;
@@ -540,7 +555,7 @@ async function start(client, { log, guildId, onPosted } = {}) {
   return { poll, stop: () => clearInterval(timer) };
 }
 
-module.exports = { start, CONF, parseModrinth, parseCurseForge, fresh, changelog, sources, SEEDED };
+module.exports = { start, CONF, parseModrinth, parseCurseForge, fresh, changelog, sources, SEEDED, KNOWN };
 
 // ---- run it on its own to see what it would do ---------------------------------------------------
 

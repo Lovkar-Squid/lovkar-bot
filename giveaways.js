@@ -335,13 +335,25 @@ function watch(client, { log = console.log } = {}) {
   return { sweep, stop: () => clearInterval(timer) };
 }
 
-/** Everything the dashboard shows, with the entry counts filled in. */
+/**
+ * Everything the dashboard shows, with the entry counts filled in and the winners named.
+ *
+ * <p>The names come out of the entries themselves - whoever presses the button leaves their tag
+ * behind - so the list can say who won without asking Discord about a user id, and still says it
+ * about somebody who has since left the server.</p>
+ */
 function list(n = 25) {
-  return db.giveawayAll(n).map((g) => ({
-    ...g,
-    entries: db.giveawayCount(g.id),
-    drawn: g.drawn ? JSON.parse(g.drawn) : [],
-  }));
+  return db.giveawayAll(n).map((g) => {
+    const entries = db.giveawayEntries(g.id);
+    const named = new Map(entries.map((e) => [e.user, e.tag]));
+    const drawn = g.drawn ? JSON.parse(g.drawn) : [];
+    return {
+      ...g,
+      entries: entries.length,
+      drawn,
+      won: drawn.map((id) => ({ id, tag: named.get(id) || null })),
+    };
+  });
 }
 
 module.exports = {

@@ -44,8 +44,9 @@ if (what === 'list') {
     const when = g.state === 'running'
       ? `ends in ${giveaways.left(g.ends - Date.now())}`
       : `${g.state} ${giveaways.left(Date.now() - (g.ended_at || g.ends))} ago`;
+    const won = (g.won || []).map((w) => w.tag || w.id).join(', ');
     console.log(`${g.id}  ${String(g.state).padEnd(9)} ${String(g.entries).padStart(4)} entries  `
-      + `${when.padEnd(20)} ${g.prize}`);
+      + `${when.padEnd(20)} ${g.prize}${won ? `  -> ${won}` : ''}`);
   }
   process.exit(0);
 }

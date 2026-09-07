@@ -595,6 +595,7 @@ padding:10px 18px;font:inherit;font-weight:600;cursor:pointer}
 table{width:100%;border-collapse:collapse}td{padding:10px 8px;border-top:1px solid var(--line);vertical-align:top}
 tr:first-child td{border-top:0}
 .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;border:1px solid var(--line)}
+.won{color:var(--gold);margin-top:2px}
 .live{color:#1a1408;background:var(--gold);border-color:var(--gold)}
 #out{margin-top:14px}.ok{color:var(--ok)}.bad{color:var(--bad)}
 .empty{color:var(--dim);padding:20px 0;text-align:center}
@@ -643,9 +644,13 @@ async function draw() {
   if (!d.list.length) { list.innerHTML = '<div class="empty">none yet</div>'; return; }
   list.innerHTML = '<table><tbody>' + d.list.map(g => {
     const live = g.state === 'running';
-    const won = (g.drawn || []).length;
+    const won = (g.won || []).length;
+    const names = (g.won || []).map(w => esc(w.tag || w.id)).join(', ');
     return '<tr data-id="' + g.id + '">' +
-      '<td><b>' + esc(g.prize) + '</b><div class="small dim">' +
+      '<td><b>' + esc(g.prize) + '</b>' +
+        (won ? '<div class="won">🎉 ' + names + '</div>'
+             : !live && g.state !== 'cancelled' ? '<div class="small dim">nobody entered</div>' : '') +
+        '<div class="small dim">' +
         (live ? 'ends ' + when(g.ends) : g.state === 'cancelled' ? 'called off' : 'ended ' + when(g.ended_at || g.ends)) +
         ' · ' + g.entries + ' ' + (g.entries === 1 ? 'entry' : 'entries') +
         ' · ' + g.winners + ' winner' + (g.winners === 1 ? '' : 's') +
@@ -654,7 +659,7 @@ async function draw() {
       '<td style="width:210px;text-align:right">' +
         (live
           ? '<button class="btn ghost end">end now</button> <button class="btn ghost off">call off</button>'
-          : (won || g.entries ? '<button class="btn ghost again">draw another</button>' : '')) +
+          : (g.entries > won ? '<button class="btn ghost again">draw another</button>' : '')) +
       '</td></tr>';
   }).join('') + '</tbody></table>';
 
@@ -859,4 +864,4 @@ setInterval(() => { if (document.visibilityState === 'visible') draw(); }, 30000
 `;
 
 // the crypto and cookie helpers are exported so test-web.js can hold them to account
-module.exports = { start, _internals: { seal, unseal, sign, sameSig, cookies } };
+module.exports = { start, _internals: { seal, unseal, sign, sameSig, cookies, page, packsPage, giveawaysPage } };

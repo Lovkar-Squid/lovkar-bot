@@ -77,7 +77,14 @@ db.giveawayClose('g1', 'ended', ['u1']);
 if (db.giveawayGet('g1').state !== 'ended') fail('it did not close');
 if (db.giveawayDue(ends + 1).length) fail('a closed giveaway is never due again');
 if (JSON.parse(db.giveawayGet('g1').drawn)[0] !== 'u1') fail('the winner was not kept');
-if (gw.list(5)[0].entries !== 1) fail('the list should carry the entry count');
+const listed = gw.list(5)[0];
+if (listed.entries !== 1) fail('the list should carry the entry count');
+if (listed.won.length !== 1) fail('the list should name the winner');
+if (listed.won[0].tag !== 'one') fail('the winner should be named from their own entry: ' + listed.won[0].tag);
+// somebody drawn whose entry was taken back out is still shown, by id
+db.giveawayClose('g1', 'ended', ['u1', 'u2']);
+if (gw.list(5)[0].won[1].tag !== null) fail('an entrant with no tag left should fall back to the id');
+db.giveawayClose('g1', 'ended', ['u1']);
 
 // ---- what start() refuses, with no Discord anywhere near it -----------------------------------
 const guild = {

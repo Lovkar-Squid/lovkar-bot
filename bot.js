@@ -9,9 +9,14 @@
  *      create the "Server Booster" role until somebody actually boosts, so the permission cannot
  *      be set in advance by hand - the bot watches for the role and grants it the moment it
  *      exists, and every time it starts.
+ *   4. The first two hundred people through the door keep an OG badge. The role is its own tally,
+ *      so there is still nothing to store.
  *
  * It reads. It tags. It never deletes anything, never kicks anyone, and never touches a post
  * a human has already tagged by hand.
+ *
+ * <p>There is also a dashboard ({@link ./web.js}) - the same process, answering from this same
+ * gateway connection, so the bot still keeps no database.</p>
  */
 
 'use strict';
@@ -19,6 +24,7 @@
 const { Client, GatewayIntentBits, Partials, ChannelType, Events, PermissionsBitField } = require('discord.js');
 const triage = require('./triage');
 const llm = require('./llm');
+const web = require('./web');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
@@ -44,6 +50,12 @@ const NEEDS_LOG_TAG = process.env.NEEDS_LOG_TAG_NAME || 'needs log';
 const BOOSTER_CHANNELS = (process.env.BOOSTER_CHANNELS || 'dev-builds,behind-the-scenes,sneak-peek')
   .split(',').map((s) => s.trim()).filter(Boolean);
 
+// The early-member badge. The role itself is the tally - Discord keeps it, so the bot still needs
+// no storage of its own, and the promise the badge makes ("one of the first N here") is exactly
+// what a member can see: at most N people wear it.
+const OG_ROLE = process.env.OG_ROLE_NAME || 'OG';
+const OG_LIMIT = Number(process.env.OG_LIMIT || 200);
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -54,7 +66,18 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
-const log = (...a) => console.log(new Date().toISOString(), ...a);
+// The log is also kept in memory, because the dashboard shows it. Five hundred lines is a few
+// days of a quiet server and costs nothing; it is not persistence, and a restart clears it.
+const RECENT = [];
+const log = (...a) => {
+  const line = [new Date().toISOString(), ...a].join(' ');
+  console.log(line);
+  RECENT.push(line);
+  if (RECENT.length > 500) RECENT.shift();
+};
+
+// what the dashboard puts on its cards
+const counters = { triaged: 0, rolesGiven: 0, retriaged: 0, ogGiven: 0 };
 
 // ---- the member role -----------------------------------------------------------------------
 
@@ -75,6 +98,7 @@ async function giveRole(member, why) {
   if (DRY) { log(`[role] (dry run) would give ${member.user.tag} ${role.name} - ${why}`); return; }
   try {
     await member.roles.add(role, `auto: ${why}`);
+    counters.rolesGiven++;
     log(`[role] ${member.user.tag} -> ${role.name} (${why})`);
   } catch (e) {
     log(`[role] could not give ${member.user.tag} ${role.name}: ${e.message}`);
@@ -93,6 +117,73 @@ async function backfill(guild) {
     await new Promise((r) => setTimeout(r, 400));       // stay well under the rate limit
   }
   log(`[role] backfill done: ${n} member(s) touched`);
+}
+
+// ---- the early-member badge ----------------------------------------------------------------
+
+/** The OG role, made if it is not there yet. Null when it cannot be. */
+async function ogRole(guild) {
+  const found = guild.roles.cache.find((r) => r.name.toLowerCase() === OG_ROLE.toLowerCase());
+  if (found) return found;
+  if (DRY) { log(`[og] (dry run) would create the "${OG_ROLE}" role`); return null; }
+  try {
+    const role = await guild.roles.create({
+      name: OG_ROLE,
+      colors: { primaryColor: 0xE2B24A },   // discord.js 14.22 renamed this; "color" still works but warns
+      hoist: false,
+      mentionable: false,
+      reason: `the first ${OG_LIMIT} members`,
+    });
+    log(`[og] created the "${role.name}" role`);
+    return role;
+  } catch (e) {
+    log(`[og] could not create "${OG_ROLE}": ${e.message}`);
+    return null;
+  }
+}
+
+/** Hand the badge to one member, if there is a place left. */
+async function giveOg(member, role) {
+  if (member.user.bot) return false;
+  if (!role || member.roles.cache.has(role.id)) return false;
+  if (role.members.size >= OG_LIMIT) return false;
+  const me = await member.guild.members.fetchMe();
+  if (role.position >= me.roles.highest.position) {
+    log(`[og] "${role.name}" sits at or above my own highest role - drag mine above it`);
+    return false;
+  }
+  if (DRY) { log(`[og] (dry run) would give ${member.user.tag} ${role.name}`); return false; }
+  try {
+    await member.roles.add(role, `one of the first ${OG_LIMIT}`);
+    counters.ogGiven++;
+    log(`[og] ${member.user.tag} -> ${role.name} (${role.members.size}/${OG_LIMIT})`);
+    return true;
+  } catch (e) {
+    log(`[og] could not give ${member.user.tag} ${role.name}: ${e.message}`);
+    return false;
+  }
+}
+
+/**
+ * Everybody already here, oldest first, until the places run out.
+ *
+ * <p>Ordering by when they joined is the whole point: if the server ever holds more than the
+ * limit, the badge should go to the ones who were here first, not to whoever the cache happened
+ * to list first.</p>
+ */
+async function ogBackfill(guild) {
+  const role = await ogRole(guild);
+  if (!role) return;
+  await guild.members.fetch();
+  const queue = [...guild.members.cache.values()]
+    .filter((m) => !m.user.bot && !m.roles.cache.has(role.id))
+    .sort((a, b) => (a.joinedTimestamp || 0) - (b.joinedTimestamp || 0));
+  let given = 0;
+  for (const m of queue) {
+    if (role.members.size >= OG_LIMIT) break;
+    if (await giveOg(m, role)) given++;
+  }
+  log(`  "${role.name}": ${role.members.size}/${OG_LIMIT}${given ? ` (${given} handed out just now)` : ''}`);
 }
 
 // ---- the bug forum -------------------------------------------------------------------------
@@ -183,6 +274,7 @@ async function onNewPost(thread) {
 
   try {
     await thread.setAppliedTags(tags, 'automatic triage');
+    counters.triaged++;
   } catch (e) {
     log(`[triage] could not tag "${thread.name}": ${e.message}`);
   }
@@ -203,6 +295,24 @@ async function onNewPost(thread) {
   } catch (e) {
     log(`[triage] could not reply in "${thread.name}": ${e.message}`);
   }
+}
+
+/**
+ * Triage a post again, at somebody's request from the dashboard.
+ *
+ * <p>{@link onNewPost} leaves alone anything that already carries a severity, because a human's
+ * tag beats a guess. Asking for it again from the dashboard <em>is</em> that human, so the
+ * severity tags are cleared first and then the ordinary path runs.</p>
+ */
+async function retriage(thread) {
+  const forum = thread.parent;
+  const severityIds = SEVERITY_TAGS.map((t) => tagId(forum, t.name)).filter(Boolean);
+  const keep = (thread.appliedTags || []).filter((id) => !severityIds.includes(id));
+  if (keep.length !== (thread.appliedTags || []).length) {
+    await thread.setAppliedTags(keep, 'triage asked for again');
+  }
+  counters.retriaged++;
+  await onNewPost(await thread.fetch());
 }
 
 // ---- what a boost unlocks ------------------------------------------------------------------
@@ -247,6 +357,7 @@ client.once(Events.ClientReady, async (c) => {
     }
   }
   log(`triage second opinion: ${llm.describe()}${DRY ? '   (DRY RUN - nothing is written)' : ''}`);
+  web.start(c, { log, llm, retriage, recent: () => [...RECENT], stats: () => ({ ...counters }) });
 });
 
 async function startGuild(g) {
@@ -262,11 +373,15 @@ async function startGuild(g) {
       log(`  forum "#${BUG_FORUM}": MISSING`);
     }
     await boosterPerks(g);
+    await ogBackfill(g);
     if (BACKFILL) await backfill(g);
   }
 }
 
-client.on(Events.GuildMemberAdd, (m) => giveRole(m, 'joined'));
+client.on(Events.GuildMemberAdd, async (m) => {
+  await giveRole(m, 'joined');
+  await giveOg(m, await ogRole(m.guild)).catch((e) => log('[og]', e.message));
+});
 // the booster role appears the moment the first boost lands, and again if it is ever recreated
 client.on(Events.GuildRoleCreate, (r) => boosterPerks(r.guild).catch((e) => log('[boost]', e.message)));
 client.on(Events.GuildUpdate, (_old, g) => boosterPerks(g).catch((e) => log('[boost]', e.message)));

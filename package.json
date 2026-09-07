@@ -2,13 +2,17 @@
   "name": "lovkar-bot",
   "version": "1.0.0",
   "private": true,
-  "description": "Discord bot for Lovkar's mods: the member role on join, and severity triage for the bug forum.",
+  "description": "Discord bot for Lovkar's mods: the member role on join, severity triage for the bug forum, booster channel access, and a dashboard.",
   "main": "bot.js",
   "type": "commonjs",
   "scripts": {
     "start": "node bot.js",
-    "test": "node test.js && node test-keyring.js"
+    "test": "node test.js && node test-keyring.js && node test-web.js"
   },
-  "engines": { "node": ">=20" },
-  "dependencies": { "discord.js": "^14.16.3" }
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3"
+  }
 }

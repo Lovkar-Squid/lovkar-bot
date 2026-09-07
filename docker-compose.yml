@@ -13,6 +13,8 @@ services:
     image: lovkar-bot:latest
     container_name: lovkar-bot
     restart: unless-stopped
+    expose:
+      - "8081"                        # the dashboard: reached through the tunnel, never published
     environment:
       DISCORD_TOKEN: "${DISCORD_TOKEN}"
       GUILD_ID: "${GUILD_ID:-}"
@@ -22,20 +24,41 @@ services:
       BACKFILL_MEMBER_ROLE: "${BACKFILL_MEMBER_ROLE:-0}"
       TRIAGE_REPLY: "${TRIAGE_REPLY:-1}"
       DRY_RUN: "${DRY_RUN:-0}"
+      BOOSTER_CHANNELS: "${BOOSTER_CHANNELS:-dev-builds,behind-the-scenes,sneak-peek}"
+      OG_ROLE_NAME: "${OG_ROLE_NAME:-OG}"
+      OG_LIMIT: "${OG_LIMIT:-200}"
+      # --- the dashboard. Without the first three it does not start, and the bot carries on. ---
+      DISCORD_CLIENT_ID: "${DISCORD_CLIENT_ID:-}"
+      DISCORD_CLIENT_SECRET: "${DISCORD_CLIENT_SECRET:-}"
+      DASH_BASE_URL: "${DASH_BASE_URL:-}"
+      DASH_SECRET: "${DASH_SECRET:-}"
+      DASH_ROLES: "${DASH_ROLES:-Lovkar}"
+      DASH_PORT: "8081"
       LLM_PROVIDER: "${LLM_PROVIDER:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       GEMINI_MODEL: "${GEMINI_MODEL:-}"
       GEMINI_COOLDOWN_MIN: "${GEMINI_COOLDOWN_MIN:-60}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       ANTHROPIC_MODEL: "${ANTHROPIC_MODEL:-claude-haiku-4-5}"
+    networks:
+      - default
+      - lovkar
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
 
+# The Cloudflare tunnel already runs beside lovkar-supporters, on that stack's network. Joining it
+# lets Cloudflare route a hostname straight at http://lovkar-bot:8081, so the dashboard is reachable
+# from outside without a single port being opened on the LAN or the router.
+networks:
+  lovkar:
+    name: lovkar-supporters_lovkar
+    external: true
+
 x-casaos:
   main: lovkar-bot
   description:
-    en_us: "Discord bot for Lovkar's mods: member role on join, severity triage for the bug forum."
+    en_us: "Discord bot for Lovkar's mods: member role on join, severity triage for the bug forum, booster channels, and a dashboard."
   tagline:
     en_us: "Tags the bug reports, welcomes the members"
   developer: "Lovkar"

@@ -1,6 +1,7 @@
 # Sentinel — Lovkar's Discord bot
 
-Three small jobs, all of them things Discord itself cannot do without a bot:
+Three small jobs, all of them things Discord itself cannot do without a bot - and a dashboard
+to watch them from:
 
 1. **The member role.** Everyone who joins gets `Dreamer`. Discord only assigns roles
    automatically through Onboarding questions, which people can skip.
@@ -12,6 +13,11 @@ Three small jobs, all of them things Discord itself cannot do without a bot:
    The bot grants that role `View Channel` on `BOOSTER_CHANNELS` at startup and whenever the
    roles change — so the perk turns itself on with the first boost, and channels named there
    that do not exist yet are simply skipped.
+4. **The OG badge.** The first `OG_LIMIT` (200) people through the door keep an `OG` role. The
+   role is created if it is missing, handed to everyone already here oldest-first, and to each
+   new arrival while places remain. The role's own member count is the tally, so there is still
+   nothing to store — and the promise it makes is exactly what anyone can check: at most two
+   hundred people wear it.
 
 It reads and it tags. It never deletes, kicks, bans, or edits anyone else's messages, and it
 leaves alone any post a human has already given a severity tag.
@@ -74,12 +80,31 @@ then set it back to `0`.
 Severity tags are created on the forum at startup if they are not there; the tags already on
 the channel are left exactly as they are.
 
+## The dashboard
+
+A single page, served by the bot's own process, so it answers from the live gateway connection
+rather than a database — the bot still stores nothing. Three tabs: every post in the bug forum
+with its tags (and the controls to change them, re-run the triage, or mark one fixed), the
+server's numbers, and the bot's own uptime and log.
+
+Sign-in is Discord's OAuth2 with the `identify` scope and nothing more. That establishes only
+*who* you are; whether you may see anything is decided here, against the guild — you must be a
+member of it and either own it or wear one of `DASH_ROLES`. Being signed in to Discord is not a
+permission.
+
+It listens on 8081 inside the container and is never published on the LAN: the Cloudflare tunnel
+that already runs beside `lovkar-supporters` routes a hostname straight at `lovkar-bot:8081`.
+Set `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and `DASH_BASE_URL` to switch it on; leave any of
+them empty and it does not start, and everything else carries on regardless.
+
 ## Files
 
-    bot.js           gateway wiring: join → role, new forum post → triage
+    bot.js           gateway wiring: join → role, new forum post → triage, boost → channels
+    web.js           the dashboard: OAuth2 sign-in, the API, and the page
     triage.js        the keyword classifier and the floor rules
     llm.js           the optional model pass and the Gemini key ring
     test.js          the classifier's tests
     test-keyring.js  the key ring's tests
+    test-web.js      the session cookie's tests
 
 Lovkar & Claude.

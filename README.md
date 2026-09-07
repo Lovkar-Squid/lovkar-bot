@@ -46,6 +46,11 @@ in: the trailer is public and that feed lists nothing at all. The channel's uplo
 publication date. So the watcher reads the playlist feed first and falls back to the channel
 feed. Same Atom document, same parser, and nothing here scrapes a web page.
 
+The channel is a default in `youtube.js` rather than a setting on the server: CasaOS owns this
+app's environment block and rewrites the compose file from its own store on every deploy, so a
+variable added there by hand does not survive. Nothing about a channel id is secret. Setting
+`YOUTUBE_CHANNEL_ID` in the environment still overrides it.
+
 Run it on its own to see what it would post, with no Discord connection and nothing written:
 
 ```

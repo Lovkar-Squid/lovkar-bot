@@ -127,8 +127,19 @@ function channelIdFrom(text) {
 
 // ---- the running part --------------------------------------------------------------------------
 
+/**
+ * The channel this watches, when nothing says otherwise.
+ *
+ * <p>It is a default in the code rather than a setting in the compose file because CasaOS owns
+ * this app's environment block and rewrites that file from its own store on every deploy - an
+ * entry added there by hand is gone by the time the container starts. Nothing here is a secret:
+ * a channel id is on the front of every video the channel has. Setting YOUTUBE_CHANNEL_ID in the
+ * environment still wins, so a second server or a rename needs no code change.</p>
+ */
+const DEFAULT_CHANNEL_ID = 'UCuM9jBc53Gt1EQtDnUAsCeg';           // youtube.com/@Lovkar_Squid
+
 const CONF = {
-  channelId: process.env.YOUTUBE_CHANNEL_ID || '',
+  channelId: process.env.YOUTUBE_CHANNEL_ID || DEFAULT_CHANNEL_ID,
   channel: process.env.YOUTUBE_CHANNEL || '',                     // a handle or any channel URL
   post: process.env.YOUTUBE_ANNOUNCE_CHANNEL || 'announcements',
   pollMinutes: Number(process.env.YOUTUBE_POLL_MINUTES || 5),

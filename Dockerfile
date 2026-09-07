@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev --no-audit --no-fund
 
-COPY bot.js web.js triage.js llm.js youtube.js packs.js pack.js db.js ./
+COPY bot.js web.js triage.js llm.js youtube.js packs.js pack.js db.js giveaways.js giveaway.js ./
 
 # COPY keeps whatever mode the files had on the way in, and a copy that arrived over scp
 # from a Windows mount arrives 0700 - which the unprivileged user below cannot read.

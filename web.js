@@ -17,6 +17,7 @@
 'use strict';
 
 const packs = require('./packs');
+const giveaways = require('./giveaways');
 
 const http = require('node:http');
 const crypto = require('node:crypto');
@@ -104,6 +105,7 @@ function start(client, opts) {
   const {
     log, recent, stats, retriage, llm,
     db = require('./db'),
+    gw = opts.giveaways || giveaways,
     port = Number(process.env.DASH_PORT || 8081),
     guildId = process.env.GUILD_ID,
     clientId = process.env.DISCORD_CLIENT_ID,
@@ -327,6 +329,45 @@ function start(client, opts) {
         }
       }
 
+      // ---- giveaways: a prize, a deadline, a button ------------------------------------------
+      if (path === '/giveaways') return send(res, 200, giveawaysPage(user, g));
+
+      if (path === '/api/giveaways') return send(res, 200, { book: db.ready, list: gw.list(30) });
+
+      if (req.method === 'POST' && path.startsWith('/api/giveaways')) {
+        if (req.headers['x-sentinel'] !== '1') return send(res, 403, { error: 'bad request' });
+        const body = await readJson(req);
+        const [, , , id, what] = path.split('/');
+        try {
+          if (!id) {
+            const out = await gw.start(g, {
+              prize: body.prize, lasts: body.lasts, winners: body.winners,
+              channel: body.channel, role: body.role, host: user.name,
+            }, log);
+            return send(res, 200, { ok: true, ...out });
+          }
+          if (what === 'end') {
+            const out = await gw.finish(client, id, log, 'ended early by ' + user.name);
+            if (!out) return send(res, 409, { error: 'that one is not running' });
+            log(`[giveaway] ${user.name} ended one early`);
+            return send(res, 200, { ok: true, ...out });
+          }
+          if (what === 'reroll') {
+            const more = await gw.reroll(client, id, Number(body.howMany) || 1, log);
+            log(`[giveaway] ${user.name} redrew one`);
+            return send(res, 200, { ok: true, winners: more });
+          }
+          if (what === 'cancel') {
+            const out = await gw.cancel(client, id, log);
+            log(`[giveaway] ${user.name} called one off`);
+            return send(res, 200, { ok: true, ...out });
+          }
+        } catch (e) {
+          return send(res, 400, { error: e.message });
+        }
+        return send(res, 404, { error: 'no such thing here' });
+      }
+
       // ---- packs: a handful of pictures, straight to the channel they belong in ---------------
       if (path === '/packs') {
         return send(res, 200, packsPage(user));
@@ -424,6 +465,7 @@ select,input{background:#0b0b0e;color:var(--ink);border:1px solid var(--line);bo
       <button data-tab="bot">Bot</button>
       <button data-tab="history">History</button>
       <a class="btn ghost" href="/packs" style="padding:6px 12px">Packs</a>
+      <a class="btn ghost" href="/giveaways" style="padding:6px 12px">Giveaways</a>
       <a class="btn ghost" href="/logout" style="padding:6px 12px">Sign out</a>
     </nav></header>
     <div id="view"><div class="empty">loading…</div></div>
@@ -511,6 +553,143 @@ f.addEventListener('submit', async (e) => {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/**
+ * The Giveaways page: a prize, how long, how many win, and the button does the rest.
+ *
+ * <p>Its own page for the same reason Packs is: it writes something the whole server sees. The
+ * list underneath is read out of the book, which is the only place the entrants exist.</p>
+ */
+function giveawaysPage(user, guild) {
+  const channels = [...guild.channels.cache.values()]
+    .filter((c) => typeof c.send === 'function' && c.type !== 4)
+    .sort((a, b) => a.rawPosition - b.rawPosition)
+    .map((c) => `<option value="${escapeHtml(c.name)}"${c.name === (process.env.GIVEAWAY_CHANNEL || 'giveaways') ? ' selected' : ''}>#${escapeHtml(c.name)}</option>`)
+    .join('');
+  const roles = [...guild.roles.cache.values()]
+    .filter((r) => r.name !== '@everyone')
+    .sort((a, b) => b.rawPosition - a.rawPosition)
+    .map((r) => `<option value="${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`)
+    .join('');
+
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Giveaways · Sentinel</title><style>
+:root{--bg:#0e0e12;--card:#16161c;--line:#2a2a33;--ink:#ece6de;--dim:#928e8a;--gold:#e2b24a;--ok:#6fcf7f;--bad:#ff7a45}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
+font:14px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif}
+a{color:var(--gold)}.wrap{max-width:860px;margin:0 auto;padding:28px 20px 60px}
+header{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);
+padding-bottom:14px;margin-bottom:22px;flex-wrap:wrap}
+h1{font-size:20px;margin:0}h3{margin:0 0 12px;font-size:15px}.dim{color:var(--dim)}.small{font-size:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+label{display:block;margin-bottom:12px}label>span{display:block;margin-bottom:5px}
+input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;
+background:#101016;color:var(--ink);font:inherit}
+.row{display:flex;gap:12px;flex-wrap:wrap}.row>*{flex:1 1 160px}
+.btn{display:inline-block;background:var(--gold);color:#1a1408;border:0;border-radius:8px;
+padding:10px 18px;font:inherit;font-weight:600;cursor:pointer}
+.btn[disabled]{opacity:.5;cursor:default}
+.btn.ghost{background:transparent;color:var(--gold);border:1px solid var(--line);font-weight:400;padding:6px 12px}
+table{width:100%;border-collapse:collapse}td{padding:10px 8px;border-top:1px solid var(--line);vertical-align:top}
+tr:first-child td{border-top:0}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;border:1px solid var(--line)}
+.live{color:#1a1408;background:var(--gold);border-color:var(--gold)}
+#out{margin-top:14px}.ok{color:var(--ok)}.bad{color:var(--bad)}
+.empty{color:var(--dim);padding:20px 0;text-align:center}
+</style></head><body><div class="wrap">
+<header><h1>Giveaways</h1><span class="dim small">signed in as ${escapeHtml(user.name)}</span>
+  <span style="margin-left:auto"><a class="btn ghost" href="/">Back</a></span>
+</header>
+
+<div class="card">
+  <p class="dim">The bot posts it, people press the button, and it draws the winners itself when the
+  time is up — even if it was restarted in between.</p>
+  <form id="f">
+    <label><span>Prize</span><input name="prize" placeholder="A copy of the modpack, early access, a key…" maxlength="200" required></label>
+    <div class="row">
+      <label><span>Runs for</span><input name="lasts" value="24h" placeholder="30m · 2h · 3d" required></label>
+      <label><span>Winners</span><input name="winners" type="number" min="1" max="${giveaways.MAX_WINNERS}" value="1"></label>
+    </div>
+    <div class="row">
+      <label><span>Channel</span><select name="channel">${channels}</select></label>
+      <label><span>Only this role may enter</span><select name="role"><option value="">anyone</option>${roles}</select></label>
+    </div>
+    <p style="margin-top:8px"><button class="btn" id="go">Start it</button></p>
+  </form>
+  <div id="out"></div>
+</div>
+
+<div class="card"><h3>What has been run</h3><div id="list"><div class="empty">loading…</div></div></div>
+
+<script>
+const f = document.getElementById('f'), go = document.getElementById('go'), out = document.getElementById('out');
+const list = document.getElementById('list');
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const when = (ms) => {
+  const s = (ms - Date.now()) / 1000, a = Math.abs(s);
+  const n = a < 90 ? Math.round(a) + 's' : a < 5400 ? Math.round(a / 60) + ' min' : a < 172800 ? Math.round(a / 3600) + ' h' : Math.round(a / 86400) + ' d';
+  return s > 0 ? 'in ' + n : n + ' ago';
+};
+const call = (p, body) => fetch(p, {
+  method: 'POST', headers: { 'x-sentinel': '1', 'content-type': 'application/json' },
+  body: JSON.stringify(body || {}),
+}).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error || 'it did not go'); return j; });
+
+async function draw() {
+  const d = await fetch('/api/giveaways', { headers: { 'x-sentinel': '1' } }).then(r => r.json());
+  if (!d.book) { list.innerHTML = '<div class="empty">The bot is not keeping a book, so it cannot run a giveaway. Mount a volume at <b>/data</b> and restart it.</div>'; return; }
+  if (!d.list.length) { list.innerHTML = '<div class="empty">none yet</div>'; return; }
+  list.innerHTML = '<table><tbody>' + d.list.map(g => {
+    const live = g.state === 'running';
+    const won = (g.drawn || []).length;
+    return '<tr data-id="' + g.id + '">' +
+      '<td><b>' + esc(g.prize) + '</b><div class="small dim">' +
+        (live ? 'ends ' + when(g.ends) : g.state === 'cancelled' ? 'called off' : 'ended ' + when(g.ended_at || g.ends)) +
+        ' · ' + g.entries + ' ' + (g.entries === 1 ? 'entry' : 'entries') +
+        ' · ' + g.winners + ' winner' + (g.winners === 1 ? '' : 's') +
+        (g.host ? ' · by ' + esc(g.host) : '') + '</div></td>' +
+      '<td style="width:90px"><span class="pill' + (live ? ' live' : '') + '">' + (live ? 'running' : g.state) + '</span></td>' +
+      '<td style="width:210px;text-align:right">' +
+        (live
+          ? '<button class="btn ghost end">end now</button> <button class="btn ghost off">call off</button>'
+          : (won || g.entries ? '<button class="btn ghost again">draw another</button>' : '')) +
+      '</td></tr>';
+  }).join('') + '</tbody></table>';
+
+  list.querySelectorAll('tr[data-id]').forEach(tr => {
+    const id = tr.dataset.id;
+    const run = async (what, body) => {
+      tr.style.opacity = .5;
+      try { await call('/api/giveaways/' + id + '/' + what, body); } catch (e) { out.innerHTML = '<span class="bad">' + esc(e.message) + '</span>'; }
+      draw();
+    };
+    tr.querySelector('.end')?.addEventListener('click', () => run('end'));
+    tr.querySelector('.off')?.addEventListener('click', () => run('cancel'));
+    tr.querySelector('.again')?.addEventListener('click', () => run('reroll', { howMany: 1 }));
+  });
+}
+
+f.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  go.disabled = true; out.textContent = 'starting…';
+  const d = Object.fromEntries(new FormData(f));
+  try {
+    const j = await call('/api/giveaways', d);
+    out.innerHTML = '<span class="ok">It is up in #' + esc(j.channel) + '.</span> <a href="' + esc(j.url) + '">open it</a>';
+    f.reset();
+  } catch (err) {
+    out.innerHTML = '<span class="bad">' + esc(err.message) + '</span>';
+  }
+  go.disabled = false;
+  draw();
+});
+
+draw();
+setInterval(() => { if (document.visibilityState === 'visible') draw(); }, 20000);
+</script>
+</div></body></html>`;
 }
 
 // The page's own script. Kept as one string so the whole dashboard is a single file.

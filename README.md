@@ -1,6 +1,6 @@
 # Sentinel — Lovkar's Discord bot
 
-Six small jobs, all of them things Discord itself cannot do without a bot - a dashboard to
+Seven small jobs, all of them things Discord itself cannot do without a bot - a dashboard to
 watch them from, and one small file to remember what Discord cannot be asked about:
 
 1. **The member role.** Everyone who joins gets `Dreamer`. Discord only assigns roles
@@ -27,6 +27,11 @@ watch them from, and one small file to remember what Discord cannot be asked abo
 6. **Packs.** A handful of pictures, posted to the channel they belong in, in one go — a
    sneak peek to `#sneak-peek` or a behind-the-scenes set to `#behind-the-scenes`. Marko does
    it from the dashboard's Packs page; whoever is at a terminal does it with `pack.js`.
+
+7. **Giveaways.** A prize, a deadline and a button. People press it to enter and press it again
+   to take their name back out; when the time is up the bot draws the winners itself and says so
+   in the channel. The countdown is Discord's own relative timestamp, so it ticks in everyone's
+   client without the bot editing anything.
 
 It reads and it tags. It never deletes, kicks, bans, or edits anyone else's messages, and it
 leaves alone any post a human has already given a severity tag.
@@ -61,6 +66,30 @@ Two rules keep it honest:
 
 `node test-db.js` covers it end to end - what it keeps, what survives a reopen, and that a bot
 with nowhere to write still runs.
+
+## Giveaways
+
+    docker exec lovkar-bot node giveaway.js start "A copy of the modpack" 24h
+    docker exec lovkar-bot node giveaway.js start "Early access" 3d 2 sneak-peek "Server Booster"
+    docker exec lovkar-bot node giveaway.js list
+    docker exec lovkar-bot node giveaway.js end|cancel|reroll <id>
+
+or the dashboard's **Giveaways** page, which is the same code with a form in front of it.
+`30m`, `2h`, `3d`, `1h30m` and a bare number of minutes are all understood; anything else is
+refused rather than guessed at.
+
+This is the one feature that cannot work without the book, and it is the reason there is one.
+Nobody can read the entrants of a giveaway back off Discord - pressing a button leaves no trace
+anyone else can see - so the entries are the one thing here that only exists in `sentinel.db`.
+In exchange, a giveaway survives a restart, a redeploy, and a night with the server switched
+off: the sweep runs every fifteen seconds and draws anything whose time ran out while the bot
+was away, the moment it is back.
+
+The draw is a partial Fisher-Yates with `crypto.randomInt` rather than `Math.random`: it costs
+nothing and means the result cannot be argued with. Nobody is drawn twice, fewer entrants than
+places simply means fewer winners, and a reroll never hands it back to somebody who has already
+won. `node test-giveaways.js` holds all of that to account, including that every entrant can
+actually win - a draw that always picked the first name would pass a weaker test.
 
 > **Keep the `volumes:` line.** CasaOS rewrites this app's compose file from its own store when
 > the app is edited in its UI. If `- ./data:/data` disappears, the bot still starts - it just

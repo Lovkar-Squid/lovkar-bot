@@ -35,6 +35,9 @@ services:
       OG_LIMIT: "${OG_LIMIT:-200}"
       DB_PATH: "${DB_PATH:-/data/sentinel.db}"
       DB_LOG_KEEP: "${DB_LOG_KEEP:-5000}"
+      # --- giveaways -------------------------------------------------------------------------
+      GIVEAWAY_CHANNEL: "${GIVEAWAY_CHANNEL:-giveaways}"
+      GIVEAWAY_SWEEP_SECONDS: "${GIVEAWAY_SWEEP_SECONDS:-15}"
       # --- the dashboard. Without the first three it does not start, and the bot carries on. ---
       DISCORD_CLIENT_ID: "${DISCORD_CLIENT_ID:-}"
       DISCORD_CLIENT_SECRET: "${DISCORD_CLIENT_SECRET:-}"

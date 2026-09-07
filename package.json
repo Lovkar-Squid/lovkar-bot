@@ -2,12 +2,12 @@
   "name": "lovkar-bot",
   "version": "1.0.0",
   "private": true,
-  "description": "Discord bot for Lovkar's mods: the member role on join, severity triage for the bug forum, booster channel access, new videos announced from YouTube, sneak-peek and behind-the-scenes packs, and a dashboard.",
+  "description": "Discord bot for Lovkar's mods: the member role on join, severity triage for the bug forum, booster channel access, new videos announced from YouTube, sneak-peek and behind-the-scenes packs, giveaways, and a dashboard.",
   "main": "bot.js",
   "type": "commonjs",
   "scripts": {
     "start": "node bot.js",
-    "test": "node test.js && node test-keyring.js && node test-web.js && node test-youtube.js && node test-packs.js && node test-db.js"
+    "test": "node test.js && node test-keyring.js && node test-web.js && node test-youtube.js && node test-packs.js && node test-db.js && node test-giveaways.js"
   },
   "engines": {
     "node": ">=20"

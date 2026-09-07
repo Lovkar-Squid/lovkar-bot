@@ -85,6 +85,31 @@ const SCHEMA = [
     at    INTEGER NOT NULL
   );
   `,
+  // v2 - giveaways, which are the first thing here that would be genuinely lost without a book
+  `
+  CREATE TABLE IF NOT EXISTS giveaways (
+    id         TEXT PRIMARY KEY,
+    channel_id TEXT    NOT NULL,
+    message_id TEXT,
+    prize      TEXT    NOT NULL,
+    winners    INTEGER NOT NULL DEFAULT 1,
+    role_id    TEXT,
+    host       TEXT,
+    created    INTEGER NOT NULL,
+    ends       INTEGER NOT NULL,
+    ended_at   INTEGER,
+    state      TEXT    NOT NULL DEFAULT 'running',
+    drawn      TEXT
+  );
+  CREATE INDEX IF NOT EXISTS giveaways_state ON giveaways (state, ends);
+  CREATE TABLE IF NOT EXISTS entries (
+    giveaway TEXT    NOT NULL,
+    user     TEXT    NOT NULL,
+    tag      TEXT,
+    at       INTEGER NOT NULL,
+    PRIMARY KEY (giveaway, user)
+  );
+  `,
 ];
 
 /** A book that is not there: every call is a shrug, so no caller needs to check first. */
@@ -99,6 +124,10 @@ const CLOSED = {
   videoPosted() {}, videosSeen() { return new Set(); }, videos() { return []; },
   report() {}, reports() { return []; },
   set() {}, get() { return null; },
+  giveawayNew() {}, giveawaySent() {}, giveawayGet() { return null; },
+  giveawayLive() { return []; }, giveawayDue() { return []; }, giveawayAll() { return []; },
+  giveawayEnter() { return false; }, giveawayLeave() { return false; },
+  giveawayEntries() { return []; }, giveawayCount() { return 0; }, giveawayClose() {},
   stats() { return { ready: false, where: 'nowhere' }; },
   close() {},
 };
@@ -205,9 +234,23 @@ function make(db, where, version, log) {
     set: db.prepare('INSERT INTO kv (key, value, at) VALUES (?, ?, ?) '
       + 'ON CONFLICT(key) DO UPDATE SET value = excluded.value, at = excluded.at'),
     get: db.prepare('SELECT value FROM kv WHERE key = ?'),
+    gNew: db.prepare('INSERT INTO giveaways (id, channel_id, prize, winners, role_id, host, created, ends) '
+      + 'VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
+    gSent: db.prepare('UPDATE giveaways SET message_id = ? WHERE id = ?'),
+    gGet: db.prepare('SELECT * FROM giveaways WHERE id = ?'),
+    gLive: db.prepare("SELECT * FROM giveaways WHERE state = 'running' ORDER BY ends"),
+    gDue: db.prepare("SELECT * FROM giveaways WHERE state = 'running' AND ends <= ? ORDER BY ends"),
+    gAll: db.prepare('SELECT * FROM giveaways ORDER BY created DESC LIMIT ?'),
+    gClose: db.prepare('UPDATE giveaways SET state = ?, ended_at = ?, drawn = ? WHERE id = ?'),
+    gEnter: db.prepare('INSERT INTO entries (giveaway, user, tag, at) VALUES (?, ?, ?, ?) '
+      + 'ON CONFLICT(giveaway, user) DO NOTHING'),
+    gLeave: db.prepare('DELETE FROM entries WHERE giveaway = ? AND user = ?'),
+    gEntries: db.prepare('SELECT user, tag, at FROM entries WHERE giveaway = ? ORDER BY at'),
+    gCount: db.prepare('SELECT COUNT(*) AS n FROM entries WHERE giveaway = ?'),
     size: db.prepare('SELECT (SELECT COUNT(*) FROM log) AS log, (SELECT COUNT(*) FROM events) AS events, '
       + '(SELECT COUNT(*) FROM packs) AS packs, (SELECT COUNT(*) FROM videos) AS videos, '
-      + '(SELECT COUNT(*) FROM reports) AS reports'),
+      + '(SELECT COUNT(*) FROM reports) AS reports, '
+      + '(SELECT COUNT(*) FROM giveaways) AS giveaways'),
   };
 
   // One complaint per kind of failure: a database that has gone bad must not fill the log with it.
@@ -287,6 +330,41 @@ function make(db, where, version, log) {
       return row ? row.value : null;
     }, null),
 
+    // ---- giveaways ------------------------------------------------------------------------
+    // A running giveaway is the one thing here that only exists in the book: nobody can read the
+    // entrants back off Discord, because clicking a button leaves no trace anyone else can see.
+
+    /** Write down a giveaway before its message exists, so a crash between the two loses nothing. */
+    giveawayNew: safe('writing a giveaway', (g) => {
+      q.gNew.run(String(g.id), String(g.channelId), String(g.prize), Number(g.winners) || 1,
+        g.roleId || null, g.host || null, Date.now(), Number(g.ends));
+    }),
+    /** ...and the message id once Discord has given us one. */
+    giveawaySent: safe('writing a giveaway message', (id, messageId) => {
+      q.gSent.run(String(messageId), String(id));
+    }),
+    giveawayGet: safe('reading a giveaway', (id) => q.gGet.get(String(id)) || null, null),
+    giveawayLive: safe('listing the running giveaways', () => q.gLive.all(), []),
+    giveawayDue: safe('listing the giveaways that are up', (now = Date.now()) => q.gDue.all(now), []),
+    giveawayAll: safe('listing the giveaways', (n = 25) => q.gAll.all(n), []),
+    /** @returns true if this is a new entry, false if they were already in */
+    giveawayEnter: safe('writing an entry', (id, user, tag) => {
+      const before = q.gCount.get(String(id)).n;
+      q.gEnter.run(String(id), String(user), tag || null, Date.now());
+      return q.gCount.get(String(id)).n > before;
+    }, false),
+    /** @returns true if they were in and are not any more */
+    giveawayLeave: safe('removing an entry', (id, user) => {
+      const before = q.gCount.get(String(id)).n;
+      q.gLeave.run(String(id), String(user));
+      return q.gCount.get(String(id)).n < before;
+    }, false),
+    giveawayEntries: safe('reading the entries', (id) => q.gEntries.all(String(id)), []),
+    giveawayCount: safe('counting the entries', (id) => q.gCount.get(String(id)).n, 0),
+    giveawayClose: safe('closing a giveaway', (id, state, drawn) => {
+      q.gClose.run(String(state), Date.now(), drawn ? JSON.stringify(drawn) : null, String(id));
+    }),
+
     stats: safe('measuring itself', () => {
       let bytes = 0;
       try { bytes = fs.statSync(where).size; } catch { /* :memory: has no size */ }
@@ -328,6 +406,17 @@ module.exports = {
   reports: (n) => book.reports(n),
   set: (key, value) => book.set(key, value),
   get: (key) => book.get(key),
+  giveawayNew: (g) => book.giveawayNew(g),
+  giveawaySent: (id, messageId) => book.giveawaySent(id, messageId),
+  giveawayGet: (id) => book.giveawayGet(id),
+  giveawayLive: () => book.giveawayLive(),
+  giveawayDue: (now) => book.giveawayDue(now),
+  giveawayAll: (n) => book.giveawayAll(n),
+  giveawayEnter: (id, user, tag) => book.giveawayEnter(id, user, tag),
+  giveawayLeave: (id, user) => book.giveawayLeave(id, user),
+  giveawayEntries: (id) => book.giveawayEntries(id),
+  giveawayCount: (id) => book.giveawayCount(id),
+  giveawayClose: (id, state, drawn) => book.giveawayClose(id, state, drawn),
   stats: () => book.stats(),
   close: () => book.close(),
 };

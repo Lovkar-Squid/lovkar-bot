@@ -29,6 +29,7 @@ const llm = require('./llm');
 const web = require('./web');
 const youtube = require('./youtube');
 const db = require('./db');
+const giveaways = require('./giveaways');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
@@ -385,10 +386,13 @@ client.once(Events.ClientReady, async (c) => {
   }
   log(`triage second opinion: ${llm.describe()}${DRY ? '   (DRY RUN - nothing is written)' : ''}`);
   web.start(c, {
-    log, llm, retriage, db,
+    log, llm, retriage, db, giveaways,
     recent: () => [...RECENT],
     stats: () => ({ ...counters, ...db.counters(), since: { ...since }, book: db.stats() }),
   });
+  // Anything that ran out of time while the bot was away is drawn the moment it is back.
+  giveaways.watch(c, { log });
+
   if (DRY) {
     log('[youtube] DRY RUN - not watching');
   } else {
@@ -433,6 +437,12 @@ client.on(Events.GuildMemberAdd, async (m) => {
 client.on(Events.GuildRoleCreate, (r) => boosterPerks(r.guild).catch((e) => log('[boost]', e.message)));
 client.on(Events.GuildUpdate, (_old, g) => boosterPerks(g).catch((e) => log('[boost]', e.message)));
 client.on(Events.ThreadCreate, (t, isNew) => { if (isNew) onNewPost(t).catch((e) => log('[triage]', e)); });
+
+// The only button the bot has: entering a giveaway, and pressing it again to leave one.
+client.on(Events.InteractionCreate, (i) => {
+  if (!i.isButton() || !i.customId.startsWith('gw:')) return;
+  giveaways.press(i, log).catch((e) => log('[giveaway]', e.message));
+});
 
 client.on(Events.Error, (e) => log('[gateway]', e.message));
 process.on('unhandledRejection', (e) => log('[unhandled]', e));

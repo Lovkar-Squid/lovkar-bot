@@ -24,7 +24,7 @@ services:
       BACKFILL_MEMBER_ROLE: "${BACKFILL_MEMBER_ROLE:-0}"
       TRIAGE_REPLY: "${TRIAGE_REPLY:-1}"
       DRY_RUN: "${DRY_RUN:-0}"
-      BOOSTER_CHANNELS: "${BOOSTER_CHANNELS:-dev-builds,behind-the-scenes,sneak-peek}"
+      BOOSTER_CHANNELS: "${BOOSTER_CHANNELS:-dev-builds,behind-the-scenes}"
       OG_ROLE_NAME: "${OG_ROLE_NAME:-OG}"
       OG_LIMIT: "${OG_LIMIT:-200}"
       # --- the dashboard. Without the first three it does not start, and the bot carries on. ---

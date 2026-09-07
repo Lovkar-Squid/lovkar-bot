@@ -47,7 +47,7 @@ const NEEDS_LOG_TAG = process.env.NEEDS_LOG_TAG_NAME || 'needs log';
 
 // Channels a boost unlocks. Missing ones are skipped, so the list can name a channel that does
 // not exist yet without anything breaking.
-const BOOSTER_CHANNELS = (process.env.BOOSTER_CHANNELS || 'dev-builds,behind-the-scenes,sneak-peek')
+const BOOSTER_CHANNELS = (process.env.BOOSTER_CHANNELS || 'dev-builds,behind-the-scenes')
   .split(',').map((s) => s.trim()).filter(Boolean);
 
 // The early-member badge. The role itself is the tally - Discord keeps it, so the bot still needs

@@ -11,6 +11,8 @@
  *      exists, and every time it starts.
  *   4. The first two hundred people through the door keep an OG badge. The role is its own tally,
  *      so there is still nothing to store.
+ *   5. A new video on the YouTube channel is announced in #announcements. What it has already
+ *      posted is read back out of that channel, so this adds no storage either.
  *
  * It reads. It tags. It never deletes anything, never kicks anyone, and never touches a post
  * a human has already tagged by hand.
@@ -25,6 +27,7 @@ const { Client, GatewayIntentBits, Partials, ChannelType, Events, PermissionsBit
 const triage = require('./triage');
 const llm = require('./llm');
 const web = require('./web');
+const youtube = require('./youtube');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
@@ -77,7 +80,7 @@ const log = (...a) => {
 };
 
 // what the dashboard puts on its cards
-const counters = { triaged: 0, rolesGiven: 0, retriaged: 0, ogGiven: 0 };
+const counters = { triaged: 0, rolesGiven: 0, retriaged: 0, ogGiven: 0, videosPosted: 0 };
 
 // ---- the member role -----------------------------------------------------------------------
 
@@ -358,6 +361,12 @@ client.once(Events.ClientReady, async (c) => {
   }
   log(`triage second opinion: ${llm.describe()}${DRY ? '   (DRY RUN - nothing is written)' : ''}`);
   web.start(c, { log, llm, retriage, recent: () => [...RECENT], stats: () => ({ ...counters }) });
+  if (DRY) {
+    log('[youtube] DRY RUN - not watching');
+  } else {
+    youtube.start(c, { log, guildId: GUILD_ID, onPosted: () => { counters.videosPosted++; } })
+      .catch((e) => log('[youtube]', e.message));
+  }
 });
 
 async function startGuild(g) {

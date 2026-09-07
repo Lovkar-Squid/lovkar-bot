@@ -7,7 +7,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node bot.js",
-    "test": "node test.js && node test-keyring.js && node test-web.js"
+    "test": "node test.js && node test-keyring.js && node test-web.js && node test-youtube.js"
   },
   "engines": {
     "node": ">=20"

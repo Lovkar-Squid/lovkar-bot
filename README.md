@@ -1,6 +1,6 @@
 # Sentinel — Lovkar's Discord bot
 
-Three small jobs, all of them things Discord itself cannot do without a bot - and a dashboard
+Five small jobs, all of them things Discord itself cannot do without a bot - and a dashboard
 to watch them from:
 
 1. **The member role.** Everyone who joins gets `Dreamer`. Discord only assigns roles
@@ -19,8 +19,38 @@ to watch them from:
    nothing to store — and the promise it makes is exactly what anyone can check: at most two
    hundred people wear it.
 
+5. **New videos.** A video going up on the YouTube channel is announced in `#announcements`
+   by itself, and published to the servers that follow that channel. What it has already
+   posted it reads back out of the channel - Discord is the record - so a restart or a
+   redeploy knows exactly as much as it did before, and there is still no database.
+
 It reads and it tags. It never deletes, kicks, bans, or edits anyone else's messages, and it
 leaves alone any post a human has already given a severity tag.
+
+## The YouTube watcher
+
+`youtube.js` reads the channel's public Atom feed every `YOUTUBE_POLL_MINUTES`. No API key, no
+quota, and a new upload shows up there within a few minutes.
+
+Two things keep it from ever announcing the back catalogue: nothing older than
+`YOUTUBE_MAX_AGE_HOURS` is posted, and everything the feed lists at startup that is already
+older than that is marked seen before the first poll. On top of both, the last hundred messages
+of the announcement channel are read at startup and every YouTube link in them counts as posted
+- so a post Marko made by hand is not repeated by the bot either.
+
+**There are two of those feeds and they do not agree.** The obvious one is keyed by channel
+(`?channel_id=UC...`), and YouTube builds it when a video is *published* — so a video uploaded
+as unlisted and switched to public later never appears in it. That is the state this channel is
+in: the trailer is public and that feed lists nothing at all. The channel's uploads *playlist*
+(`?playlist_id=UU...` — the same id with `UC` swapped for `UU`) does list it, with a real
+publication date. So the watcher reads the playlist feed first and falls back to the channel
+feed. Same Atom document, same parser, and nothing here scrapes a web page.
+
+Run it on its own to see what it would post, with no Discord connection and nothing written:
+
+```
+node youtube.js
+```
 
 ## How the triage decides
 

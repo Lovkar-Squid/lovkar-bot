@@ -485,6 +485,7 @@ async function drawBot() {
       '<div class="stat"><b>' + (s.triaged ?? 0) + '</b><span class="dim small">posts triaged</span></div>' +
       '<div class="stat"><b>' + (s.rolesGiven ?? 0) + '</b><span class="dim small">roles handed out</span></div>' +
       '<div class="stat"><b>' + (s.ogGiven ?? 0) + '</b><span class="dim small">OG badges</span></div>' +
+      '<div class="stat"><b>' + (s.videosPosted ?? 0) + '</b><span class="dim small">videos announced</span></div>' +
     '</div>' +
     '<div class="card"><div class="row"><b>' + esc(s.tag || '') + '</b>' +
       '<span class="dim small">second opinion: ' + esc(s.llm || 'none') + '</span></div></div>' +

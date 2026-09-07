@@ -220,7 +220,7 @@ function findChannel(guild, name) {
  * Start watching. Safe to call when nothing is configured - it says so and does nothing, the way
  * the dashboard does when its own settings are missing.
  */
-async function start(client, { log, guildId, onPosted } = {}) {
+async function start(client, { log, guildId, onPosted, seen: remembered } = {}) {
   const say = log || console.log;
   const id = await resolveChannelId(say).catch((e) => { say(`[youtube] ${e.message}`); return null; });
   if (!id) {
@@ -236,11 +236,21 @@ async function start(client, { log, guildId, onPosted } = {}) {
   const maxAgeMs = CONF.maxAgeHours * 3600 * 1000;
   const seen = new Set();
 
+  // What the bot wrote down last time, if it keeps a book. A shortcut, never the record:
+  // #announcements is read straight afterwards and whatever is found there is added to it.
+  let fromBook = 0;
+  try {
+    for (const vid of (remembered ? remembered() : [])) { seen.add(vid); fromBook++; }
+  } catch (e) {
+    say(`[youtube] could not read what went out before: ${e.message}`);
+  }
+
   try {
     for (const vid of await alreadyPosted(channel)) seen.add(vid);
-    say(`[youtube] #${CONF.post} already carries ${seen.size} video${seen.size === 1 ? '' : 's'}`);
+    say(`[youtube] #${CONF.post} already carries ${seen.size} video${seen.size === 1 ? '' : 's'}`
+      + `${fromBook ? ` (${fromBook} of them remembered)` : ''}`);
   } catch (e) {
-    // If the history cannot be read, the age cutoff is still holding the line on its own.
+    // If the history cannot be read, the book and the age cutoff are still holding the line.
     say(`[youtube] could not read #${CONF.post}: ${e.message}`);
   }
 
@@ -270,7 +280,7 @@ async function start(client, { log, guildId, onPosted } = {}) {
           allowedMentions: CONF.mention ? undefined : { parse: [] },
         });
         say(`[youtube] posted "${e.title}" (${e.id}) in #${channel.name}`);
-        if (onPosted) onPosted(e);
+        if (onPosted) onPosted(e, msg);
         // #announcements is an Announcement channel: publishing is what makes it reach the
         // servers that follow it. It is a no-op anywhere else, and never worth failing over.
         if (CONF.crosspost && msg.crosspostable) {

@@ -1,7 +1,7 @@
 # Sentinel — Lovkar's Discord bot
 
-Six small jobs, all of them things Discord itself cannot do without a bot - and a dashboard
-to watch them from:
+Six small jobs, all of them things Discord itself cannot do without a bot - a dashboard to
+watch them from, and one small file to remember what Discord cannot be asked about:
 
 1. **The member role.** Everyone who joins gets `Dreamer`. Discord only assigns roles
    automatically through Onboarding questions, which people can skip.
@@ -22,7 +22,7 @@ to watch them from:
 5. **New videos.** A video going up on the YouTube channel is announced in `#announcements`
    by itself, and published to the servers that follow that channel. What it has already
    posted it reads back out of the channel - Discord is the record - so a restart or a
-   redeploy knows exactly as much as it did before, and there is still no database.
+   redeploy knows exactly as much as it did before.
 
 6. **Packs.** A handful of pictures, posted to the channel they belong in, in one go — a
    sneak peek to `#sneak-peek` or a behind-the-scenes set to `#behind-the-scenes`. Marko does
@@ -30,6 +30,41 @@ to watch them from:
 
 It reads and it tags. It never deletes, kicks, bans, or edits anyone else's messages, and it
 leaves alone any post a human has already given a severity tag.
+
+## The book
+
+For most of its life this bot had no database at all, and the reason was a good one: Discord
+already holds the record. The tags on a post, the roles on a member, the messages in
+`#announcements` - all of it can be read back off the gateway on every start, and none of it
+can go stale or disagree with what people actually see. That has not changed, and nothing
+Discord can answer for is copied here as the truth.
+
+What Discord cannot answer for is the bot's account of itself: the log the dashboard shows,
+how many posts it has ever triaged, which pictures went out and when. Those used to live in
+memory and die with the container. They now live in `db.js` - one SQLite file, no server, no
+new dependency, because SQLite ships inside Node.
+
+    /data/sentinel.db     mounted from ./data next to the compose file
+
+It holds the log, a lifetime counter per thing the bot does, a line per pack posted, a line
+per video announced, what the triage decided about each post, and a small key/value corner for
+anything else worth one line. Roughly a megabyte a year on a server this size.
+
+Two rules keep it honest:
+
+* **Discord stays the record.** The watcher still reads `#announcements` at startup; the book
+  only *adds* to what it finds there. Delete a message and the bot agrees with you.
+* **It must run without it.** If the volume is missing, read-only, or the runtime has no
+  SQLite, every call to the book quietly does nothing, the dashboard says so on the Bot tab,
+  and the bot behaves exactly as it did before there was one. Losing the file costs history,
+  never function.
+
+`node test-db.js` covers it end to end - what it keeps, what survives a reopen, and that a bot
+with nowhere to write still runs.
+
+> **Keep the `volumes:` line.** CasaOS rewrites this app's compose file from its own store when
+> the app is edited in its UI. If `- ./data:/data` disappears, the bot still starts - it just
+> forgets everything on every redeploy, and the Bot tab will say so.
 
 ## Packs
 

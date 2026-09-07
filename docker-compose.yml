@@ -1,6 +1,8 @@
 name: lovkar-bot
 
-# One container. It holds no data of its own - everything it needs is on Discord.
+# One container and one file. Nearly everything it needs is on Discord and is read back off
+# the gateway; what Discord cannot answer for - its own log, its own counters, what it has
+# posted - lives in ./data/sentinel.db, which is why that directory is mounted below.
 #
 #   cd ~/lovkar-bot && git pull --ff-only && docker compose up -d --build
 #
@@ -15,6 +17,10 @@ services:
     restart: unless-stopped
     expose:
       - "8081"                        # the dashboard: reached through the tunnel, never published
+    volumes:
+      # The book. Keep this line: without it a redeploy forgets the log, the counters and the
+      # history, and the bot falls back to remembering nothing at all.
+      - ./data:/data
     environment:
       DISCORD_TOKEN: "${DISCORD_TOKEN}"
       GUILD_ID: "${GUILD_ID:-}"
@@ -27,6 +33,8 @@ services:
       BOOSTER_CHANNELS: "${BOOSTER_CHANNELS:-dev-builds,behind-the-scenes}"
       OG_ROLE_NAME: "${OG_ROLE_NAME:-OG}"
       OG_LIMIT: "${OG_LIMIT:-200}"
+      DB_PATH: "${DB_PATH:-/data/sentinel.db}"
+      DB_LOG_KEEP: "${DB_LOG_KEEP:-5000}"
       # --- the dashboard. Without the first three it does not start, and the bot carries on. ---
       DISCORD_CLIENT_ID: "${DISCORD_CLIENT_ID:-}"
       DISCORD_CLIENT_SECRET: "${DISCORD_CLIENT_SECRET:-}"

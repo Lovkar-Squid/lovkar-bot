@@ -6,11 +6,14 @@
  * here, so the channel mapping, the batching and the rules about what may be posted are written
  * once.</p>
  *
- * <p>Nothing is stored. The files go from the upload straight to Discord and are forgotten - the
- * bot still has no database, and Discord keeps the only copy that matters.</p>
+ * <p>The pictures are not kept. They go from the upload straight to Discord, which holds the only
+ * copy that matters; the book ({@link ./db.js}) keeps one line saying a pack went out, so there is
+ * an answer to "when did we last post anything" that survives a redeploy.</p>
  */
 
 'use strict';
+
+const db = require('./db');
 
 /** Where each pack goes, and what to say about it if nothing is said. */
 const PACKS = {
@@ -85,6 +88,13 @@ async function post(guild, kind, files, caption, who, log = () => {}) {
   }
   log(`[packs] ${who} posted ${files.length} file${files.length === 1 ? '' : 's'} `
     + `to #${channel.name} as ${pack.label.toLowerCase()}`);
+  // The pictures themselves are Discord's now; what is kept here is the note that they went out.
+  db.pack({
+    kind, channel: channel.name, files: files.length, who, caption: text, url: urls[0],
+    bytes: files.reduce((n, f) => n + f.data.length, 0),
+    names: files.map((f) => f.name),
+  });
+  db.bump('packsPosted');
   return { channel: channel.name, messages, files: files.length, urls };
 }
 

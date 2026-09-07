@@ -98,10 +98,12 @@ async function readJson(req, limit = 64 * 1024) {
  * @param opts.stats   () => object, counters the bot keeps
  * @param opts.retriage (thread) => Promise<void>, re-run the triage on one post
  * @param opts.llm     the llm module, for describe()
+ * @param opts.db      the book ({@link ./db.js}); the History tab is what it is for
  */
 function start(client, opts) {
   const {
     log, recent, stats, retriage, llm,
+    db = require('./db'),
     port = Number(process.env.DASH_PORT || 8081),
     guildId = process.env.GUILD_ID,
     clientId = process.env.DISCORD_CLIENT_ID,
@@ -286,6 +288,16 @@ function start(client, opts) {
         });
       }
 
+      if (path === '/api/history') {
+        return send(res, 200, {
+          book: db.stats(),
+          packs: db.packs(20),
+          videos: db.videos(15),
+          reports: db.reports(20),
+          events: db.events(40),
+        });
+      }
+
       // ---- the two things that write ---------------------------------------------------------
       if (req.method === 'POST' && path.startsWith('/api/reports/')) {
         // a cross-site form cannot set this header, and the cookie is SameSite=Lax
@@ -410,6 +422,7 @@ select,input{background:#0b0b0e;color:var(--ink);border:1px solid var(--line);bo
       <button class="on" data-tab="reports">Reports</button>
       <button data-tab="server">Server</button>
       <button data-tab="bot">Bot</button>
+      <button data-tab="history">History</button>
       <a class="btn ghost" href="/packs" style="padding:6px 12px">Packs</a>
       <a class="btn ghost" href="/logout" style="padding:6px 12px">Sign out</a>
     </nav></header>
@@ -602,9 +615,53 @@ async function drawBot() {
       '<div class="stat"><b>' + (s.ogGiven ?? 0) + '</b><span class="dim small">OG badges</span></div>' +
       '<div class="stat"><b>' + (s.videosPosted ?? 0) + '</b><span class="dim small">videos announced</span></div>' +
     '</div>' +
+    '<p class="dim small" style="margin:-6px 0 16px">Totals since the bot first ran' +
+      (s.since ? ' — this run: ' + Object.entries(s.since).filter(([, n]) => n).map(([k, n]) => n + ' ' + k).join(', ') || ' — nothing yet this run' : '') + '</p>' +
     '<div class="card"><div class="row"><b>' + esc(s.tag || '') + '</b>' +
-      '<span class="dim small">second opinion: ' + esc(s.llm || 'none') + '</span></div></div>' +
+      '<span class="dim small">second opinion: ' + esc(s.llm || 'none') + '</span>' +
+      '<span class="dim small">book: ' + (s.book && s.book.ready ? esc(s.book.where) + ' · ' + bytes(s.book.bytes) : 'none — nothing is being remembered') + '</span>' +
+    '</div></div>' +
     '<div class="card"><h3 style="margin:0 0 12px">Log</h3><pre>' + esc((s.log || []).join('\n')) + '</pre></div>';
+}
+
+const bytes = (n) => !n ? '0 B' : n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+
+async function drawHistory() {
+  const d = await get('/api/history');
+  if (!d.book || !d.book.ready) {
+    view.innerHTML = '<div class="card"><div class="empty">The bot is not keeping a book right now, so there is no history.' +
+      '<div class="small" style="margin-top:8px">Mount a volume at <b>/data</b> (or set <b>DB_PATH</b>) and restart it.</div></div></div>';
+    return;
+  }
+  const rows = (list, cols) => list.length
+    ? '<table><tbody>' + list.map(r => '<tr>' + cols(r).map(c => '<td>' + c + '</td>').join('') + '</tr>').join('') + '</tbody></table>'
+    : '<div class="empty">nothing yet</div>';
+
+  view.innerHTML =
+    '<div class="grid" style="margin-bottom:16px">' +
+      '<div class="stat"><b>' + (d.book.rows ? d.book.rows.packs : 0) + '</b><span class="dim small">packs posted</span></div>' +
+      '<div class="stat"><b>' + (d.book.rows ? d.book.rows.videos : 0) + '</b><span class="dim small">videos announced</span></div>' +
+      '<div class="stat"><b>' + (d.book.rows ? d.book.rows.reports : 0) + '</b><span class="dim small">posts triaged</span></div>' +
+      '<div class="stat"><b>' + bytes(d.book.bytes) + '</b><span class="dim small">the book</span></div>' +
+    '</div>' +
+    '<div class="card"><h3 style="margin:0 0 12px">Packs</h3>' + rows(d.packs, p => [
+      '<b>' + esc(p.kind === 'bts' ? 'Behind the scenes' : 'Sneak peek') + '</b>' +
+        '<div class="small dim">' + esc(p.names || '') + '</div>',
+      '<span class="dim small">#' + esc(p.channel || '') + ' · ' + p.files + ' file' + (p.files === 1 ? '' : 's') +
+        ' · ' + bytes(p.bytes) + '</span>',
+      '<span class="dim small">' + esc(p.who || '') + ' · ' + ago(p.at) + '</span>',
+      p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noreferrer">open</a>' : '',
+    ]) + '</div>' +
+    '<div class="card"><h3 style="margin:0 0 12px">Videos</h3>' + rows(d.videos, v => [
+      '<a href="' + esc(v.url || '#') + '" target="_blank" rel="noreferrer">' + esc(v.title || v.id) + '</a>',
+      '<span class="dim small">' + ago(v.posted_at) + '</span>',
+    ]) + '</div>' +
+    '<div class="card"><h3 style="margin:0 0 12px">What happened</h3>' + rows(d.events, e => [
+      '<span class="tag ' + esc(e.kind) + '">' + esc(e.kind) + '</span>',
+      esc(e.subject || ''),
+      '<span class="dim small">' + esc(e.detail || '') + '</span>',
+      '<span class="dim small">' + ago(e.at) + '</span>',
+    ]) + '</div>';
 }
 
 async function draw() {
@@ -612,6 +669,7 @@ async function draw() {
   try {
     if (tab === 'reports') await drawReports();
     else if (tab === 'server') await drawServer();
+    else if (tab === 'history') await drawHistory();
     else await drawBot();
   } catch (e) {
     view.innerHTML = '<div class="card"><div class="empty">' + esc(e.message) + '</div></div>';

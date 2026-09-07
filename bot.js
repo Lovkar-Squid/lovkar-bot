@@ -28,6 +28,7 @@ const triage = require('./triage');
 const llm = require('./llm');
 const web = require('./web');
 const youtube = require('./youtube');
+const db = require('./db');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
@@ -69,18 +70,34 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
-// The log is also kept in memory, because the dashboard shows it. Five hundred lines is a few
-// days of a quiet server and costs nothing; it is not persistence, and a restart clears it.
+// The log the dashboard shows. Five hundred lines is a few days of a quiet server and costs
+// nothing; the book behind it keeps a longer tail, so a restart no longer starts on a blank page.
+const RING = 500;
 const RECENT = [];
 const log = (...a) => {
   const line = [new Date().toISOString(), ...a].join(' ');
   console.log(line);
   RECENT.push(line);
-  if (RECENT.length > 500) RECENT.shift();
+  if (RECENT.length > RING) RECENT.shift();
+  db.line(line);
 };
 
-// what the dashboard puts on its cards
-const counters = { triaged: 0, rolesGiven: 0, retriaged: 0, ogGiven: 0, videosPosted: 0 };
+// The book. Opened before anything else has anything to say, so the first lines land in it too.
+// If there is nowhere to keep it, every call to it is a shrug and the bot runs as it always did.
+db.open(log);
+if (db.ready) RECENT.splice(0, RECENT.length, ...db.lines(RING));
+
+// What the dashboard puts on its cards. The totals are everything the bot has ever done, read back
+// out of the book; `since` is only this run, which is the number that used to be shown.
+const counters = { joined: 0, triaged: 0, rolesGiven: 0, retriaged: 0, ogGiven: 0,
+  videosPosted: 0, packsPosted: 0 };
+const since = { ...counters };
+Object.assign(counters, db.counters());
+const count = (name, by = 1) => {
+  counters[name] = (counters[name] || 0) + by;
+  since[name] = (since[name] || 0) + by;
+  db.bump(name, by);
+};
 
 // ---- the member role -----------------------------------------------------------------------
 
@@ -101,7 +118,8 @@ async function giveRole(member, why) {
   if (DRY) { log(`[role] (dry run) would give ${member.user.tag} ${role.name} - ${why}`); return; }
   try {
     await member.roles.add(role, `auto: ${why}`);
-    counters.rolesGiven++;
+    count('rolesGiven');
+    db.event('role', member.user.tag, `${role.name} - ${why}`);
     log(`[role] ${member.user.tag} -> ${role.name} (${why})`);
   } catch (e) {
     log(`[role] could not give ${member.user.tag} ${role.name}: ${e.message}`);
@@ -158,7 +176,8 @@ async function giveOg(member, role) {
   if (DRY) { log(`[og] (dry run) would give ${member.user.tag} ${role.name}`); return false; }
   try {
     await member.roles.add(role, `one of the first ${OG_LIMIT}`);
-    counters.ogGiven++;
+    count('ogGiven');
+    db.event('og', member.user.tag, `${role.members.size}/${OG_LIMIT}`);
     log(`[og] ${member.user.tag} -> ${role.name} (${role.members.size}/${OG_LIMIT})`);
     return true;
   } catch (e) {
@@ -277,7 +296,12 @@ async function onNewPost(thread) {
 
   try {
     await thread.setAppliedTags(tags, 'automatic triage');
-    counters.triaged++;
+    count('triaged');
+    db.report({
+      id: thread.id, title: thread.name, author: starter?.author?.tag || null,
+      severity: verdict.severity, project: verdict.project, needsLog: verdict.needsLog,
+      why: verdict.why,
+    });
   } catch (e) {
     log(`[triage] could not tag "${thread.name}": ${e.message}`);
   }
@@ -314,7 +338,7 @@ async function retriage(thread) {
   if (keep.length !== (thread.appliedTags || []).length) {
     await thread.setAppliedTags(keep, 'triage asked for again');
   }
-  counters.retriaged++;
+  count('retriaged');
   await onNewPost(await thread.fetch());
 }
 
@@ -360,11 +384,23 @@ client.once(Events.ClientReady, async (c) => {
     }
   }
   log(`triage second opinion: ${llm.describe()}${DRY ? '   (DRY RUN - nothing is written)' : ''}`);
-  web.start(c, { log, llm, retriage, recent: () => [...RECENT], stats: () => ({ ...counters }) });
+  web.start(c, {
+    log, llm, retriage, db,
+    recent: () => [...RECENT],
+    stats: () => ({ ...counters, ...db.counters(), since: { ...since }, book: db.stats() }),
+  });
   if (DRY) {
     log('[youtube] DRY RUN - not watching');
   } else {
-    youtube.start(c, { log, guildId: GUILD_ID, onPosted: () => { counters.videosPosted++; } })
+    youtube.start(c, {
+      log,
+      guildId: GUILD_ID,
+      seen: () => db.videosSeen(),
+      onPosted: (e, msg) => {
+        count('videosPosted');
+        db.videoPosted({ id: e.id, title: e.title, url: e.url, published: e.published, messageId: msg?.id });
+      },
+    })
       .catch((e) => log('[youtube]', e.message));
   }
 });
@@ -388,6 +424,8 @@ async function startGuild(g) {
 }
 
 client.on(Events.GuildMemberAdd, async (m) => {
+  db.event('join', m.user.tag, `${m.guild.memberCount} members`);
+  count('joined');
   await giveRole(m, 'joined');
   await giveOg(m, await ogRole(m.guild)).catch((e) => log('[og]', e.message));
 });

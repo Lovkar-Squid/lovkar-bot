@@ -1,6 +1,6 @@
 # Sentinel — Lovkar's Discord bot
 
-Five small jobs, all of them things Discord itself cannot do without a bot - and a dashboard
+Six small jobs, all of them things Discord itself cannot do without a bot - and a dashboard
 to watch them from:
 
 1. **The member role.** Everyone who joins gets `Dreamer`. Discord only assigns roles
@@ -24,8 +24,36 @@ to watch them from:
    posted it reads back out of the channel - Discord is the record - so a restart or a
    redeploy knows exactly as much as it did before, and there is still no database.
 
+6. **Packs.** A handful of pictures, posted to the channel they belong in, in one go — a
+   sneak peek to `#sneak-peek` or a behind-the-scenes set to `#behind-the-scenes`. Marko does
+   it from the dashboard's Packs page; whoever is at a terminal does it with `pack.js`.
+
 It reads and it tags. It never deletes, kicks, bans, or edits anyone else's messages, and it
 leaves alone any post a human has already given a severity tag.
+
+## Packs
+
+`packs.js` knows two packs — `sneak` and `bts` — and where each one goes. Both doors into it
+end up in the same place, so the channel mapping, the batching and the rules about what may be
+posted are written once.
+
+From the dashboard, sign in and open **Packs**: pick which pack, drop the files on it, write a
+line, send. From a terminal, when the pictures are already on the server:
+
+```
+docker exec lovkar-bot node pack.js sneak "The tornado finally has a body." /tmp/pack/*.png
+docker exec lovkar-bot node pack.js bts   ""                                /tmp/pack/tex.jpg
+```
+
+An empty caption means the pack says its own line. Up to 30 files, 10 MB each; Discord takes ten
+attachments per message, so more than that becomes several messages and only the first carries
+the words.
+
+**Nothing is stored.** The files go from the upload straight to Discord and are forgotten — the
+bot still has no database, and Discord keeps the only copy that matters. The multipart parser is
+written by hand (the bot has no dependencies beyond discord.js) and it walks the raw buffer
+rather than turning it into a string first: a PNG turned into a UTF-8 string and back is no
+longer a PNG.
 
 ## Where the settings live
 

@@ -16,6 +16,8 @@
 
 'use strict';
 
+const packs = require('./packs');
+
 const http = require('node:http');
 const crypto = require('node:crypto');
 
@@ -313,6 +315,39 @@ function start(client, opts) {
         }
       }
 
+      // ---- packs: a handful of pictures, straight to the channel they belong in ---------------
+      if (path === '/packs') {
+        return send(res, 200, packsPage(user));
+      }
+
+      if (req.method === 'POST' && path === '/api/packs') {
+        if (req.headers['x-sentinel'] !== '1') return send(res, 403, { error: 'bad request' });
+        const chunks = [];
+        let size = 0;
+        for await (const chunk of req) {
+          size += chunk.length;
+          // the per-file limit times the file limit, and a little room for the form itself
+          if (size > packs.MAX_BYTES * packs.MAX_FILES + 65536) {
+            return send(res, 413, { error: 'that is more than this will carry' });
+          }
+          chunks.push(chunk);
+        }
+        let form;
+        try {
+          form = packs.multipart(Buffer.concat(chunks), req.headers['content-type']);
+        } catch (e) {
+          return send(res, 400, { error: e.message });
+        }
+        try {
+          const out = await packs.post(g, form.fields.kind, form.files, form.fields.caption,
+            user.name, log);
+          return send(res, 200, { ok: true, ...out });
+        } catch (e) {
+          log(`[packs] ${user.name}: ${e.message}`);
+          return send(res, 400, { error: e.message });
+        }
+      }
+
       return send(res, 404, { error: 'no such thing here' });
     } catch (e) {
       log(`[dash] ${req.method} ${path}: ${e.message}`);
@@ -375,10 +410,90 @@ select,input{background:#0b0b0e;color:var(--ink);border:1px solid var(--line);bo
       <button class="on" data-tab="reports">Reports</button>
       <button data-tab="server">Server</button>
       <button data-tab="bot">Bot</button>
+      <a class="btn ghost" href="/packs" style="padding:6px 12px">Packs</a>
       <a class="btn ghost" href="/logout" style="padding:6px 12px">Sign out</a>
     </nav></header>
     <div id="view"><div class="empty">loading…</div></div>
     <script>${APP}</script>`);
+}
+
+/**
+ * The Packs page: pick a pack, drop the pictures on it, say a line, send.
+ *
+ * <p>Deliberately its own page rather than a tab: it is the one place in this dashboard that
+ * writes something everybody in the server will see, and it should feel like it.</p>
+ */
+function packsPage(user) {
+  const options = packs.kinds().map((k) => {
+    const p = packs.about(k);
+    return `<label class="pick"><input type="radio" name="kind" value="${k}"${k === 'sneak' ? ' checked' : ''}>
+      <span><b>${escapeHtml(p.label)}</b><br><span class="dim small">#${escapeHtml(p.channel)} — ${escapeHtml(p.blurb)}</span></span></label>`;
+  }).join('');
+
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Packs · Sentinel</title><style>
+:root{--bg:#0e0e12;--card:#16161c;--line:#2a2a33;--ink:#ece6de;--dim:#928e8a;--gold:#e2b24a;--ok:#6fcf7f;--bad:#ff7a45}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
+font:14px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif}
+a{color:var(--gold)}.wrap{max-width:760px;margin:0 auto;padding:28px 20px 60px}
+header{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);
+padding-bottom:14px;margin-bottom:22px;flex-wrap:wrap}
+h1{font-size:20px;margin:0}.dim{color:var(--dim)}.small{font-size:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+.pick{display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--line);
+border-radius:10px;margin-bottom:10px;cursor:pointer}
+.pick:has(input:checked){border-color:var(--gold);background:#1c1a16}
+input[type=file]{width:100%;padding:14px;border:1px dashed var(--line);border-radius:10px;
+background:#101016;color:var(--ink)}
+textarea{width:100%;min-height:74px;padding:10px;border:1px solid var(--line);border-radius:10px;
+background:#101016;color:var(--ink);font:inherit;resize:vertical}
+.btn{display:inline-block;background:var(--gold);color:#1a1408;border:0;border-radius:8px;
+padding:10px 18px;font:inherit;font-weight:600;cursor:pointer}
+.btn[disabled]{opacity:.5;cursor:default}
+.btn.ghost{background:transparent;color:var(--gold);border:1px solid var(--line);font-weight:400}
+#out{margin-top:14px}.ok{color:var(--ok)}.bad{color:var(--bad)}
+ul{margin:8px 0 0;padding-left:18px}
+</style></head><body><div class="wrap">
+<header><h1>Packs</h1><span class="dim small">signed in as ${escapeHtml(user.name)}</span>
+  <span style="margin-left:auto"><a class="btn ghost" href="/" style="padding:6px 12px">Back</a></span>
+</header>
+<div class="card">
+  <p class="dim">A handful of pictures, posted to the channel they belong in. Nothing is kept here —
+  they go straight to Discord.</p>
+  <form id="f">
+    ${options}
+    <p style="margin:16px 0 6px" class="dim small">Pictures or clips — up to ${packs.MAX_FILES},
+      ${packs.MAX_BYTES / 1048576} MB each. More than ${packs.PER_MESSAGE} becomes several messages.</p>
+    <input type="file" name="files" multiple accept="image/*,video/mp4,video/webm">
+    <p style="margin:16px 0 6px" class="dim small">What to say above them (optional).</p>
+    <textarea name="caption" placeholder="Leave it empty and the pack says its own line."></textarea>
+    <p style="margin-top:16px"><button class="btn" id="go">Post it</button></p>
+  </form>
+  <div id="out"></div>
+</div>
+<script>
+const f = document.getElementById('f'), go = document.getElementById('go'), out = document.getElementById('out');
+f.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const data = new FormData(f);
+  if (!data.getAll('files').filter((x) => x.size).length) {
+    out.innerHTML = '<span class="bad">Pick some pictures first.</span>'; return;
+  }
+  go.disabled = true; out.textContent = 'sending…';
+  try {
+    const r = await fetch('/api/packs', { method: 'POST', headers: { 'x-sentinel': '1' }, body: data });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'it did not go');
+    out.innerHTML = '<span class="ok">Posted ' + j.files + ' to #' + j.channel + '.</span><ul>' +
+      j.urls.map((u) => '<li><a href="' + u + '">' + u + '</a></li>').join('') + '</ul>';
+    f.reset();
+  } catch (err) {
+    out.innerHTML = '<span class="bad">' + err.message + '</span>';
+  } finally { go.disabled = false; }
+});
+</script>
+</div></body></html>`;
 }
 
 function escapeHtml(s) {

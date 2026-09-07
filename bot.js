@@ -417,7 +417,8 @@ client.once(Events.ClientReady, async (c) => {
     queue.watch(c, { log, guildId: GUILD_ID });
     suggestions.start(c, { log, guildId: GUILD_ID });
     milestones.start(c, { log, guildId: GUILD_ID });
-    releases.start(c, { log, guildId: GUILD_ID, onPosted: () => count('releasesPosted') })
+    // releases.js counts its own; a second count here would double it on the dashboard
+    releases.start(c, { log, guildId: GUILD_ID })
       .catch((e) => log('[release]', e.message));
   }
 

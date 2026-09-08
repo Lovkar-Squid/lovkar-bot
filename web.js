@@ -449,10 +449,12 @@ function page(message, user) {
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sentinel</title><style>
 :root{--bg:#0e0e12;--card:#16161c;--line:#2a2a33;--ink:#ece6de;--dim:#928e8a;--gold:#e2b24a;
---hot:#ff7a45;--warm:#ffab3d;--cool:#7fc4ff;--ok:#6fcf7f}
+--hot:#ff7a45;--warm:#ffab3d;--cool:#7fc4ff;--ok:#6fcf7f;
+/* the four things a narrow screen changes; the media block at the end sets them */
+--pad-x:20px;--pad-y:28px;--tap:auto;--field:inherit}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
 font:14px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif}
-a{color:var(--gold)}.wrap{max-width:1100px;margin:0 auto;padding:28px 20px 60px}
+a{color:var(--gold)}.wrap{max-width:1100px;margin:0 auto;padding:var(--pad-y) var(--pad-x) 60px}
 header{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:22px;flex-wrap:wrap}
 h1{font-size:20px;margin:0;letter-spacing:.2px}.dim{color:var(--dim)}.small{font-size:12px}
 .lead{font-size:16px;color:var(--dim);max-width:52ch}
@@ -461,7 +463,8 @@ text-decoration:none;font-weight:600;border:0;cursor:pointer;font-size:14px}
 .btn.ghost{background:transparent;color:var(--dim);border:1px solid var(--line)}
 nav{margin-left:auto;display:flex;gap:6px}
 nav button{background:transparent;border:1px solid transparent;color:var(--dim);padding:6px 12px;
-border-radius:7px;cursor:pointer;font:inherit}
+border-radius:7px;cursor:pointer;font:inherit;min-height:var(--tap)}
+nav .btn{padding:6px 12px}
 nav button.on{background:var(--card);border-color:var(--line);color:var(--ink)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:16px 18px;margin-bottom:16px}
 table{width:100%;border-collapse:collapse}th{text-align:left;font-size:11px;letter-spacing:.09em;
@@ -477,10 +480,52 @@ margin:0 4px 4px 0;color:var(--dim);white-space:nowrap}
 .stat b{display:block;font-size:24px;font-weight:600;letter-spacing:-.5px}
 pre{background:#0b0b0e;border:1px solid var(--line);border-radius:9px;padding:12px;overflow:auto;
 max-height:460px;font-size:12px;line-height:1.55;margin:0}
-select,input{background:#0b0b0e;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit}
+select,input{background:#0b0b0e;color:var(--ink);border:1px solid var(--line);border-radius:7px;
+padding:6px 9px;font:inherit;font-size:var(--field)}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .bar{height:7px;background:#0b0b0e;border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--gold)}
 .empty{color:var(--dim);padding:22px 0;text-align:center}
+.btn.drop{padding:4px 10px;font-size:12px}
+
+/* ---- the phone ---------------------------------------------------------------------------
+   One block. Everything above is the desktop and stays exactly as it was. */
+@media (max-width:720px){
+:root{--pad-x:14px;--pad-y:18px;--tap:40px;--field:16px}
+html,body{max-width:100%}
+.wrap{padding:var(--pad-y) var(--pad-x) 44px}
+h1{font-size:19px}
+.card{padding:14px}
+.grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.btn{padding:11px 16px;min-height:var(--tap)}
+.btn.ghost,.btn.drop{padding:9px 14px;font-size:14px;min-height:var(--tap)}
+/* the title keeps its line; the tabs become a strip you can push sideways */
+header{align-items:center;gap:6px 10px;padding-bottom:12px;margin-bottom:18px}
+nav{margin-left:0;flex:1 0 100%;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+scrollbar-width:none;padding-bottom:2px}
+nav::-webkit-scrollbar{display:none}
+nav>*{flex:0 0 auto;white-space:nowrap}
+nav button,nav .btn{min-height:var(--tap);display:inline-flex;align-items:center;padding:8px 14px;font-size:14px}
+/* every list stops being a table and becomes one card per row */
+table,tbody{display:block;width:100%}
+thead{display:none}
+tr{display:block;border-top:1px solid var(--line);padding:11px 0}
+tbody tr:first-child{border-top:0;padding-top:2px}
+td{display:block;width:auto!important;max-width:none!important;border-top:0;padding:2px 0;
+text-align:left!important;overflow-wrap:anywhere}
+td:empty{display:none}
+/* a bar only means anything beside its name and its number: keep those two on one line */
+tr:has(.bar){display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px}
+tr:has(.bar)>td{flex:0 0 auto;padding:3px 0}
+tr:has(.bar)>td:first-child{flex:1 1 auto;min-width:0;text-align:left!important}
+tr:has(.bar)>td:last-child{text-align:right!important}
+tr:has(.bar)>td:has(.bar){flex:1 1 100%;order:1;padding:5px 0 3px}
+/* the Reports row's select and its two buttons stay together, just bigger */
+td.row{padding-top:8px}
+td.row>.sev{flex:1 1 130px;min-height:var(--tap)}
+td.row>.btn{flex:0 0 auto}
+pre{max-height:300px;overflow:auto;overflow-x:auto;font-size:11.5px}
+select,input,textarea{font-size:var(--field)}
+}
 </style></head><body><div class="wrap">${inner}</div></body></html>`;
 
   if (!user) {
@@ -494,9 +539,9 @@ select,input{background:#0b0b0e;color:var(--ink);border:1px solid var(--line);bo
       <button data-tab="server">Server</button>
       <button data-tab="bot">Bot</button>
       <button data-tab="history">History</button>
-      <a class="btn ghost" href="/packs" style="padding:6px 12px">Packs</a>
-      <a class="btn ghost" href="/giveaways" style="padding:6px 12px">Giveaways</a>
-      <a class="btn ghost" href="/logout" style="padding:6px 12px">Sign out</a>
+      <a class="btn ghost" href="/packs">Packs</a>
+      <a class="btn ghost" href="/giveaways">Giveaways</a>
+      <a class="btn ghost" href="/logout">Sign out</a>
     </nav></header>
     <div id="view"><div class="empty">loading…</div></div>
     <script>${APP}</script>`);
@@ -518,10 +563,11 @@ function packsPage(user) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Packs · Sentinel</title><style>
-:root{--bg:#0e0e12;--card:#16161c;--line:#2a2a33;--ink:#ece6de;--dim:#928e8a;--gold:#e2b24a;--ok:#6fcf7f;--bad:#ff7a45}
+:root{--bg:#0e0e12;--card:#16161c;--line:#2a2a33;--ink:#ece6de;--dim:#928e8a;--gold:#e2b24a;--ok:#6fcf7f;--bad:#ff7a45;
+--pad-x:20px;--pad-y:28px;--tap:auto;--field:inherit}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
 font:14px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif}
-a{color:var(--gold)}.wrap{max-width:760px;margin:0 auto;padding:28px 20px 60px}
+a{color:var(--gold)}.wrap{max-width:760px;margin:0 auto;padding:var(--pad-y) var(--pad-x) 60px}
 header{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);
 padding-bottom:14px;margin-bottom:22px;flex-wrap:wrap}
 h1{font-size:20px;margin:0}.dim{color:var(--dim)}.small{font-size:12px}
@@ -539,9 +585,27 @@ padding:10px 18px;font:inherit;font-weight:600;cursor:pointer}
 .btn.ghost{background:transparent;color:var(--gold);border:1px solid var(--line);font-weight:400}
 #out{margin-top:14px}.ok{color:var(--ok)}.bad{color:var(--bad)}
 ul{margin:8px 0 0;padding-left:18px}
+header .btn{padding:6px 12px}
+
+/* ---- the phone --------------------------------------------------------------------------- */
+@media (max-width:720px){
+:root{--pad-x:14px;--pad-y:18px;--tap:40px;--field:16px}
+html,body{max-width:100%}
+.wrap{padding:var(--pad-y) var(--pad-x) 44px}
+h1{font-size:19px}
+header{align-items:center;gap:6px 10px;padding-bottom:12px;margin-bottom:18px}
+header>span:last-child{margin-left:auto}
+.card{padding:16px 14px}
+.pick{padding:14px 12px;gap:10px}
+.pick input[type=radio],.pick input[type=checkbox]{width:20px;height:20px;flex:0 0 auto;margin:1px 0 0}
+input[type=file]{padding:16px 12px;font-size:var(--field)}
+textarea{font-size:var(--field);min-height:96px;padding:12px}
+.btn{padding:12px 20px;min-height:var(--tap)}
+header .btn{padding:9px 14px;min-height:var(--tap);display:inline-flex;align-items:center}
+}
 </style></head><body><div class="wrap">
 <header><h1>Packs</h1><span class="dim small">signed in as ${escapeHtml(user.name)}</span>
-  <span style="margin-left:auto"><a class="btn ghost" href="/" style="padding:6px 12px">Back</a></span>
+  <span style="margin-left:auto"><a class="btn ghost" href="/">Back</a></span>
 </header>
 <div class="card">
   <p class="dim">A handful of pictures, posted to the channel they belong in. Nothing is kept here —
@@ -612,17 +676,18 @@ function giveawaysPage(user, guild) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Giveaways · Sentinel</title><style>
-:root{--bg:#0e0e12;--card:#16161c;--line:#2a2a33;--ink:#ece6de;--dim:#928e8a;--gold:#e2b24a;--ok:#6fcf7f;--bad:#ff7a45}
+:root{--bg:#0e0e12;--card:#16161c;--line:#2a2a33;--ink:#ece6de;--dim:#928e8a;--gold:#e2b24a;--ok:#6fcf7f;--bad:#ff7a45;
+--pad-x:20px;--pad-y:28px;--tap:auto;--field:inherit}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
 font:14px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif}
-a{color:var(--gold)}.wrap{max-width:860px;margin:0 auto;padding:28px 20px 60px}
+a{color:var(--gold)}.wrap{max-width:860px;margin:0 auto;padding:var(--pad-y) var(--pad-x) 60px}
 header{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);
 padding-bottom:14px;margin-bottom:22px;flex-wrap:wrap}
 h1{font-size:20px;margin:0}h3{margin:0 0 12px;font-size:15px}.dim{color:var(--dim)}.small{font-size:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
 label{display:block;margin-bottom:12px}label>span{display:block;margin-bottom:5px}
 input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;
-background:#101016;color:var(--ink);font:inherit}
+background:#101016;color:var(--ink);font:inherit;font-size:var(--field)}
 .row{display:flex;gap:12px;flex-wrap:wrap}.row>*{flex:1 1 160px}
 .btn{display:inline-block;background:var(--gold);color:#1a1408;border:0;border-radius:8px;
 padding:10px 18px;font:inherit;font-weight:600;cursor:pointer}
@@ -635,6 +700,27 @@ tr:first-child td{border-top:0}
 .live{color:#1a1408;background:var(--gold);border-color:var(--gold)}
 #out{margin-top:14px}.ok{color:var(--ok)}.bad{color:var(--bad)}
 .empty{color:var(--dim);padding:20px 0;text-align:center}
+
+/* ---- the phone --------------------------------------------------------------------------- */
+@media (max-width:720px){
+:root{--pad-x:14px;--pad-y:18px;--tap:40px;--field:16px}
+html,body{max-width:100%}
+.wrap{padding:var(--pad-y) var(--pad-x) 44px}
+h1{font-size:19px}
+header{align-items:center;gap:6px 10px;padding-bottom:12px;margin-bottom:18px}
+.card{padding:16px 14px}
+.row>*{flex:1 1 100%}
+.btn{padding:12px 20px;min-height:var(--tap)}
+.btn.ghost{padding:9px 14px;min-height:var(--tap);display:inline-flex;align-items:center}
+/* the list stops being a table and becomes one card per giveaway */
+table,tbody{display:block;width:100%}
+tr{display:block;border-top:1px solid var(--line);padding:11px 0}
+tr:first-child{border-top:0;padding-top:2px}
+td{display:block;width:auto!important;max-width:none!important;border-top:0;padding:2px 0;
+text-align:left!important;overflow-wrap:anywhere}
+td:last-child{display:flex;flex-wrap:wrap;gap:8px;padding-top:9px}
+td:empty{display:none}
+}
 </style></head><body><div class="wrap">
 <header><h1>Giveaways</h1><span class="dim small">signed in as ${escapeHtml(user.name)}</span>
   <span style="margin-left:auto"><a class="btn ghost" href="/">Back</a></span>
@@ -845,6 +931,13 @@ async function drawBot() {
 }
 
 const bytes = (n) => !n ? '0 B' : n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+// ago() only reads backwards; a queue is full of dates that have not happened yet
+const when = (ms) => {
+  const s = (ms - Date.now()) / 1000;
+  if (s <= 60) return 'any moment';
+  const n = s < 5400 ? Math.round(s / 60) + ' min' : s < 172800 ? Math.round(s / 3600) + ' h' : Math.round(s / 86400) + ' d';
+  return 'in ' + n;
+};
 
 async function drawHistory() {
   const d = await get('/api/history');
@@ -862,6 +955,8 @@ async function drawHistory() {
       '<div class="stat"><b>' + (d.book.rows ? d.book.rows.packs : 0) + '</b><span class="dim small">packs posted</span></div>' +
       '<div class="stat"><b>' + (d.book.rows ? d.book.rows.videos : 0) + '</b><span class="dim small">videos announced</span></div>' +
       '<div class="stat"><b>' + (d.book.rows ? d.book.rows.reports : 0) + '</b><span class="dim small">posts triaged</span></div>' +
+      '<div class="stat"><b>' + (d.book.rows ? d.book.rows.releases || 0 : 0) + '</b><span class="dim small">releases announced</span></div>' +
+      '<div class="stat"><b>' + (d.book.rows ? d.book.rows.queued || 0 : 0) + '</b><span class="dim small">in the queue</span></div>' +
       '<div class="stat"><b>' + bytes(d.book.bytes) + '</b><span class="dim small">the book</span></div>' +
     '</div>' +
     '<div class="card"><h3 style="margin:0 0 12px">Packs</h3>' + rows(d.packs, p => [
@@ -890,8 +985,8 @@ async function drawHistory() {
     ]) + '</div>' +
     '<div class="card"><h3 style="margin:0 0 12px">The queue</h3>' + rows((d.queue || []).filter(q => !q.posted_at), q => [
       esc(q.name) + '<div class="small dim">' + esc(q.kind === 'bts' ? 'behind the scenes' : 'sneak peek') + (q.caption ? ' · ' + esc(q.caption.slice(0, 60)) : '') + '</div>',
-      '<span class="dim small">due ' + (q.due ? ago(q.due) : 'now') + '</span>',
-      '<button class="btn ghost drop" data-q="' + q.id + '" style="padding:4px 10px;font-size:12px">take out</button>',
+      '<span class="dim small">' + (q.due ? when(q.due) : 'any moment') + '</span>',
+      '<button class="btn ghost drop" data-q="' + q.id + '">take out</button>',
     ]) + '</div>' +
     '<div class="card"><h3 style="margin:0 0 12px">What happened</h3>' + rows(d.events, e => [
       '<span class="tag ' + esc(e.kind) + '">' + esc(e.kind) + '</span>',

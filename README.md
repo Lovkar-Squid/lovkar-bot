@@ -247,6 +247,13 @@ between `QUEUE_FROM_HOUR` and `QUEUE_TO_HOUR`, so nothing is posted at four in t
 first one goes out at once - dropping twenty pictures should show one straight away, not leave
 the channel silent for three days.
 
+Or put it on a clock: `QUEUE_AT=18:00` (or `12:30,19:00`) posts one picture at each named time,
+on the days in `QUEUE_DAYS` if that is set. This replaces the spacing rule rather than joining it -
+pictures are queued in order and the clock decides. Which slots have already fired is one line in
+the book, so a redeploy does not fire them again, and a slot more than `QUEUE_CATCHUP_MINUTES`
+(90) past is a missed slot rather than a late one: a bot that was off for two days must not empty
+the queue the moment it comes back.
+
 The files wait in `/data/queue`, beside the book and on the same volume, because a picture
 waiting three weeks has to survive every redeploy in between. Posting goes through `packs.js`
 like anything else, so there is one code path to the channel.

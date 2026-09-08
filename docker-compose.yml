@@ -22,6 +22,10 @@ services:
       # history, and the bot falls back to remembering nothing at all.
       - ./data:/data
     environment:
+      # A named time means nothing without a zone, and the image is UTC by default: a slot called
+      # 19:00 would have gone out at 21:00 in Slovenia. Node carries its own zone data, so this is
+      # all it takes - the shell's own `date` inside the container stays UTC and does not matter.
+      TZ: "${TZ:-Europe/Ljubljana}"
       DISCORD_TOKEN: "${DISCORD_TOKEN}"
       GUILD_ID: "${GUILD_ID:-}"
       MEMBER_ROLE_NAME: "${MEMBER_ROLE_NAME:-Dreamer}"

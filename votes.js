@@ -20,6 +20,10 @@
  *   VOTE_ROLE         the role a voter gets (default Voter; empty = none)
  *   VOTE_ROLE_DAYS    how long they keep it after their last vote (default 7; 0 = for good)
  *   VOTE_QUIET        1 = count and reward, but post nothing
+ *   VOTE_REMIND_AT    a daily time (HH:MM, server zone) to remind the people who asked; '' = never
+ *                     (default 18:00). VOTE_REMIND_ROLE (Vote reminders - the role menu's opt-in
+ *                     button), VOTE_REMIND_CHANNEL (default: the votes channel), VOTE_URL (else
+ *                     the address learnt from the last vote that came in)
  *
  * Discadia can hand out a role itself, but its role picker never listed the roles this bot had
  * created (Voter, OG), so the role is Sentinel's job: given on the vote, and taken back by a sweep
@@ -39,7 +43,15 @@ const CONF = {
   role: (process.env.VOTE_ROLE ?? 'Voter').trim(),
   roleDays: Math.max(0, Number(process.env.VOTE_ROLE_DAYS ?? 7) || 0),
   quiet: (process.env.VOTE_QUIET || '').trim() === '1',
+  remindAt: (process.env.VOTE_REMIND_AT ?? '18:00').trim(),
+  remindRole: (process.env.VOTE_REMIND_ROLE ?? 'Vote reminders').trim(),
+  remindChannel: (process.env.VOTE_REMIND_CHANNEL || process.env.VOTE_CHANNEL || 'votes').trim(),
+  voteUrl: (process.env.VOTE_URL || '').trim(),
 };
+
+const { dueSlot } = require('./queue');
+/** A reminder more than this late is a missed one, not a late one (the bot was off, say). */
+const REMIND_CATCHUP_MIN = 90;
 
 /** How often the sweep looks for Voter roles whose week is up. */
 const SWEEP_MS = 10 * 60 * 1000;
@@ -136,6 +148,7 @@ async function vote(guild, body, { log = console.log, now = Date.now() } = {}) {
   }
   const counts = tally(v.userId, now);
   out.counted = true;
+  if (v.voteUrl) db.set('votes:url', v.voteUrl);          // the address the daily reminder points at
 
   let member = null;
   try {
@@ -207,19 +220,63 @@ async function sweep(guild, { log = console.log, now = Date.now() } = {}) {
   return taken;
 }
 
+/** The address people vote at: the setting, else what the last vote said, else nothing. */
+function voteUrl() {
+  return CONF.voteUrl || db.get('votes:url') || '';
+}
+
+/** The daily reminder. Pure, for the test. */
+function reminder(roleId, url) {
+  const who = roleId ? `<@&${roleId}> ` : '';
+  const where = url ? ` ${url}` : '';
+  return `🗳️ ${who}Votes are open again - every vote is +1 Boost for the server on Discadia, once every 24 hours.${where}
+`
+    + `-# Voters wear the Voter badge for a week. Press the 🗳️ button in #welcome to stop (or start) these reminders.`;
+}
+
+/**
+ * Once a day, at VOTE_REMIND_AT, tell the people who asked that they can vote again. Which day
+ * has been served is one line in the book (votes:remindedat), so a restart does not say it twice,
+ * and a slot more than REMIND_CATCHUP_MIN past is a missed one rather than a late one. Nobody is
+ * pinged but the role - and with no role, nobody at all.
+ */
+async function remind(guild, { log = console.log, now = Date.now() } = {}) {
+  if (!CONF.remindAt || !guild) return false;
+  const due = dueSlot(now, db.get('votes:remindedat'), { at: CONF.remindAt, on: '', catchup: REMIND_CATCHUP_MIN });
+  if (!due) return false;
+  const channel = findChannel(guild, CONF.remindChannel);
+  if (!channel) {
+    log(`[votes] no #${CONF.remindChannel} - no reminder`);
+    return false;
+  }
+  const role = CONF.remindRole
+    ? guild.roles.cache.find((r) => r.name.toLowerCase() === CONF.remindRole.toLowerCase()) : null;
+  try {
+    await channel.send({ content: reminder(role?.id, voteUrl()), allowedMentions: { roles: role ? [role.id] : [] } });
+    db.set('votes:remindedat', String(due));
+    log(`[votes] reminded #${channel.name}${role ? ` (@${role.name}, ${role.members?.size ?? '?'} people)` : ' (no role to ping)'}`);
+    return true;
+  } catch (e) {
+    log(`[votes] could not remind in #${channel.name}: ${e.message}`);
+    return false;
+  }
+}
+
 /** Start the sweep. Nothing to do without a token, a role, or a book. */
 function start(client, { log = console.log, guildId } = {}) {
   if (!CONF.token) { log('[votes] off (no VOTE_HOOK_TOKEN) - no vote webhook, no Voter sweep'); return null; }
   const guild = () => (guildId ? client?.guilds?.cache?.get(guildId) : client?.guilds?.cache?.first());
   if (!guild()) { log('[votes] no guild - off'); return null; }
   if (!db.ready) { log('[votes] no book - votes are answered but not counted, and the Voter role is not timed'); return null; }
-  log(`[votes] on: thanks in #${CONF.channel}${CONF.role ? `, ${CONF.role} role${CONF.roleDays ? ` for ${CONF.roleDays} days` : ''}` : ''}`
+  log(`[votes] on: ${CONF.quiet ? 'quiet (somebody else says thank you)' : `thanks in #${CONF.channel}`}${CONF.role ? `, ${CONF.role} role${CONF.roleDays ? ` for ${CONF.roleDays} days` : ''}` : ''}`
     + `, ${Number(db.get('votes:total')) || 0} counted so far`);
-  const run = () => sweep(guild(), { log }).catch((e) => log(`[votes] sweep: ${e.message}`));
+  if (CONF.remindAt) log(`[votes] daily reminder at ${CONF.remindAt} in #${CONF.remindChannel} for @${CONF.remindRole || '(nobody)'}`);
+  const run = () => sweep(guild(), { log }).catch((e) => log(`[votes] sweep: ${e.message}`))
+    .then(() => remind(guild(), { log })).catch((e) => log(`[votes] remind: ${e.message}`));
   run();
   const timer = setInterval(run, SWEEP_MS);
   timer.unref?.();
-  return { sweep: (opts) => sweep(guild(), { log, ...opts }), stop: () => clearInterval(timer) };
+  return { sweep: (opts) => sweep(guild(), { log, ...opts }), remind: (opts) => remind(guild(), { log, ...opts }), stop: () => clearInterval(timer) };
 }
 
 /**
@@ -271,4 +328,4 @@ function status(baseUrl) {
   };
 }
 
-module.exports = { handle, vote, sweep, start, reading, tally, line, url, matches, status, CONF, PATH };
+module.exports = { handle, vote, sweep, remind, reminder, start, reading, tally, line, url, matches, status, CONF, PATH };

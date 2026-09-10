@@ -258,6 +258,11 @@ own role picker never listed the roles this bot had created) and to take back: a
 `VOTE_ROLE_DAYS` (7) after the person's last vote, so a Voter is somebody who voted this week.
 `VOTE_CHANNEL`, `VOTE_ROLE` and `VOTE_QUIET=1` adjust the rest; without a token the path does not exist.
 
+Once a day, at `VOTE_REMIND_AT` (18:00), the people who pressed the 🗳️ button in the role menu are
+reminded in `#votes` that they can vote again (a member may vote once every 24 hours; every vote is
+a Boost for the listing). Only that role is pinged, the day served is written in the book, and a
+reminder more than 90 minutes late is skipped rather than posted at midnight.
+
 ## The Supporter role
 
 `SUPPORTER_ROLE_NAME` (default `Supporter`) is the booster role's twin, made for the people who help

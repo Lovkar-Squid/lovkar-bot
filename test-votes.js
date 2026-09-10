@@ -10,6 +10,9 @@ process.env.VOTE_ROLE = 'Voter';
 process.env.VOTE_ROLE_DAYS = '7';
 process.env.VOTE_CHANNEL = 'votes';
 process.env.VOTE_QUIET = '';
+process.env.VOTE_REMIND_AT = '18:00';
+process.env.VOTE_REMIND_ROLE = 'Vote reminders';
+process.env.TZ = 'Europe/Ljubljana';
 
 const assert = require('node:assert');
 const db = require('./db');
@@ -109,6 +112,21 @@ guild.channels.cache.find = function (f) { return [...this.values()].find(f); };
   assert.strictEqual(ok.body.ok, true);
   await votes.handle(req('POST'), {}, '/hooks/discadia/testtoken0123456789abcdef', { guild, log: quiet, send, readJson: async () => ({ hello: 'world' }) });
   assert.strictEqual(calls.pop().status, 400, 'not a vote');
+
+  // the daily reminder: once at 18:00 local, pinging only the opt-in role, with the address learnt from a vote
+  const remindRole = { id: 'r2', name: 'Vote reminders', members: new Map() };
+  guild.roles.cache.set('r2', remindRole);
+  const six = new Date(2026, 8, 12, 17, 59, 0, 0).getTime();       // a Saturday, 17:59
+  assert.strictEqual(await votes.remind(guild, { log: quiet, now: six }), false, 'a minute early');
+  assert.strictEqual(await votes.remind(guild, { log: quiet, now: six + 2 * 60_000 }), true, '18:01 - due');
+  const rem = sent[sent.length - 1];
+  assert.ok(rem.content.startsWith('🗳️ <@&r2> Votes are open again'), rem.content);
+  assert.ok(rem.content.includes('https://discadia.com/vote/x'), 'the address from the vote');
+  assert.deepStrictEqual(rem.allowedMentions, { roles: ['r2'] }, 'only the role is pinged');
+  assert.strictEqual(await votes.remind(guild, { log: quiet, now: six + 30 * 60_000 }), false, 'not twice');
+  assert.strictEqual(await votes.remind(guild, { log: quiet, now: six + 5 * 60 * 60_000 }), false, 'too late for today, and done anyway');
+  assert.strictEqual(await votes.remind(guild, { log: quiet, now: six + 24 * 60 * 60_000 + 2 * 60_000 }), true, 'the next day');
+  assert.ok(votes.reminder(null, '').startsWith('🗳️ Votes are open again'), 'no role, no ping');
 
   const st = votes.status('https://sentinel.example');
   assert.strictEqual(st.on, true);

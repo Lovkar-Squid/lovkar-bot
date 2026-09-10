@@ -43,7 +43,7 @@ const LABEL_MAX = 80;       // ...and this is as long as a label may be
 
 /** What the server gets if nobody configures anything: the four things worth being pinged about. */
 const DEFAULT_MENU = 'releases:New releases:📦,sneaks:Sneak peeks:🔍,streams:Streams:🎥,'
-  + 'giveaways:Giveaways:🎉';
+  + 'giveaways:Giveaways:🎉,votes:Vote reminders:🗳️';
 
 const CONF = {
   channel: process.env.ROLE_MENU_CHANNEL || 'welcome',   // a channel name or an id

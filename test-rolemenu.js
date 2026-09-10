@@ -19,11 +19,11 @@ const EPHEMERAL = MessageFlags.Ephemeral;
 
 // ---- reading the setting ------------------------------------------------------------------------
 const four = menu.parse(menu.CONF.menu);
-if (four.length !== 4) fail('the four defaults should read as four: ' + four.length);
-if (four.map((r) => r.key).join(',') !== 'releases,sneaks,streams,giveaways') {
+if (four.length !== 5) fail('the five defaults should read as five: ' + four.length);
+if (four.map((r) => r.key).join(',') !== 'releases,sneaks,streams,giveaways,votes') {
   fail('the keys are wrong: ' + four.map((r) => r.key).join(','));
 }
-if (four.map((r) => r.name).join('|') !== 'New releases|Sneak peeks|Streams|Giveaways') {
+if (four.map((r) => r.name).join('|') !== 'New releases|Sneak peeks|Streams|Giveaways|Vote reminders') {
   fail('the role name is the middle field: ' + four.map((r) => r.name).join('|'));
 }
 if (four[0].emoji !== '📦') fail('the emoji did not come through: ' + JSON.stringify(four[0].emoji));
@@ -173,11 +173,11 @@ function fakePress(customId, guild, member) {
   if (!guild.fetched) fail('the role list should be asked for before roles are made from a stale cache');
 
   // only what was missing
-  if (guild.made.length !== 3) fail('only the three missing roles should be made: ' + guild.made.length);
-  if (guild.made.map((o) => o.name).join('|') !== 'New releases|Sneak peeks|Giveaways') {
+  if (guild.made.length !== 4) fail('only the four missing roles should be made: ' + guild.made.length);
+  if (guild.made.map((o) => o.name).join('|') !== 'New releases|Sneak peeks|Giveaways|Vote reminders') {
     fail('the wrong roles were made: ' + guild.made.map((o) => o.name).join('|'));
   }
-  if (guild.roles.cache.size !== 4) fail('the server should end up with four roles: ' + guild.roles.cache.size);
+  if (guild.roles.cache.size !== 5) fail('the server should end up with five roles: ' + guild.roles.cache.size);
   for (const o of guild.made) {
     if (!Array.isArray(o.permissions) || o.permissions.length) fail(`"${o.name}" was given permissions`);
     if (o.mentionable !== true) fail(`"${o.name}" cannot be pinged, which is the whole point of it`);
@@ -189,9 +189,9 @@ function fakePress(customId, guild, member) {
   if (embed.color !== 0xe2b24a) fail('the colour is wrong: ' + embed.color);
   if (embed.title !== menu.CONF.title) fail('the title is wrong: ' + embed.title);
   if (!/notified/.test(embed.description || '')) fail('it should say the roles only decide notifications');
-  if (body.components.length !== 1) fail('four buttons fit on one row: ' + body.components.length);
+  if (body.components.length !== 1) fail('five buttons fit on one row: ' + body.components.length);
   const row = body.components[0].toJSON();
-  if (row.components.length !== 4) fail('a button per role: ' + row.components.length);
+  if (row.components.length !== 5) fail('a button per role: ' + row.components.length);
   if (row.components[0].custom_id !== 'role:releases') fail('the id is wrong: ' + row.components[0].custom_id);
   if (row.components[0].label !== 'New releases') fail('the label is wrong: ' + row.components[0].label);
   if (row.components[0].emoji?.name !== '📦') fail('the emoji did not reach the button');
@@ -207,7 +207,7 @@ function fakePress(customId, guild, member) {
   if (welcome.edits.length !== 1) fail('the second call should have edited the first: ' + welcome.edits.length);
   if (!again.edited) fail('the second call should say that is what it did');
   if (again.id !== first.id) fail('it edited some other message: ' + again.id);
-  if (guild.made.length !== 3) fail('the roles were made all over again: ' + guild.made.length);
+  if (guild.made.length !== 4) fail('the roles were made all over again: ' + guild.made.length);
 
   // ---- ...and puts up a fresh one when the old message has been deleted -----------------------------
   welcome.messages.store.delete(first.id);

@@ -20,6 +20,7 @@ const packs = require('./packs');
 const giveaways = require('./giveaways');
 const polls = require('./polls');
 const queue = require('./queue');
+const votes = require('./votes');
 
 const http = require('node:http');
 const crypto = require('node:crypto');
@@ -211,6 +212,8 @@ function start(client, opts) {
     const path = url.pathname;
     try {
       if (path === '/healthz') return send(res, 200, { ok: true });
+      // Discadia calls this for every vote - a token in the path, no sign-in (see votes.js)
+      if (path.startsWith('/hooks/')) { await votes.handle(req, res, path, { guild, log, send, readJson }); return; }
 
       if (path === '/login') {
         const state = seal({ n: crypto.randomBytes(8).toString('hex'), exp: Date.now() + 10 * 60 * 1000 }, secret);
@@ -289,6 +292,7 @@ function start(client, opts) {
           tag: client.user?.tag,
           ping: Math.round(client.ws.ping),
           llm: llm.describe(),
+          votes: votes.status(baseUrl),
           ...stats(),
           log: recent(),
         });
@@ -920,6 +924,7 @@ async function drawBot() {
       '<div class="stat"><b>' + (s.rolesGiven ?? 0) + '</b><span class="dim small">roles handed out</span></div>' +
       '<div class="stat"><b>' + (s.ogGiven ?? 0) + '</b><span class="dim small">OG badges</span></div>' +
       '<div class="stat"><b>' + (s.videosPosted ?? 0) + '</b><span class="dim small">videos announced</span></div>' +
+      '<div class="stat"><b>' + (s.votes ? s.votes.total : 0) + '</b><span class="dim small">Discadia votes</span></div>' +
     '</div>' +
     '<p class="dim small" style="margin:-6px 0 16px">Totals since the bot first ran' +
       (s.since ? ' — this run: ' + Object.entries(s.since).filter(([, n]) => n).map(([k, n]) => n + ' ' + k).join(', ') || ' — nothing yet this run' : '') + '</p>' +
@@ -927,6 +932,13 @@ async function drawBot() {
       '<span class="dim small">second opinion: ' + esc(s.llm || 'none') + '</span>' +
       '<span class="dim small">book: ' + (s.book && s.book.ready ? esc(s.book.where) + ' · ' + bytes(s.book.bytes) : 'none — nothing is being remembered') + '</span>' +
     '</div></div>' +
+    '<div class="card"><h3 style="margin:0 0 8px">Discadia votes</h3>' +
+      (s.votes && s.votes.on
+        ? '<p class="dim small" style="margin:0 0 8px">Paste this address into Discadia → Edit listing → Vote Webhooks. Every vote thanks the voter in #' + esc(s.votes.channel) + (s.votes.role ? ' and gives them the ' + esc(s.votes.role) + ' role' : '') + '.</p>' +
+          '<div class="row"><code id="votehook" style="word-break:break-all">' + esc(s.votes.url) + '</code>' +
+          '<button class="btn" onclick="navigator.clipboard.writeText(document.getElementById(\'votehook\').textContent).then(()=>{this.textContent=\'copied\'})">copy</button></div>'
+        : '<p class="dim small" style="margin:0">Off - set VOTE_HOOK_TOKEN in the environment to switch it on.</p>') +
+    '</div>' +
     '<div class="card"><h3 style="margin:0 0 12px">Log</h3><pre>' + esc((s.log || []).join('\n')) + '</pre></div>';
 }
 

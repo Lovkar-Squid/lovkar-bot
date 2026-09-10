@@ -39,6 +39,8 @@ const milestones = require('./milestones');
 const rolemenu = require('./rolemenu');
 const welcome = require('./welcome');
 const notify = require('./notify');
+const bump = require('./bump');
+const votes = require('./votes');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
@@ -61,6 +63,11 @@ const NEEDS_LOG_TAG = process.env.NEEDS_LOG_TAG_NAME || 'needs log';
 
 // Channels a boost unlocks. Missing ones are skipped, so the list can name a channel that does
 // not exist yet without anything breaking.
+/** A role Lovkar hands out by hand that opens the same channels boosting does; empty switches it off. */
+const SUPPORTER_ROLE = (process.env.SUPPORTER_ROLE_NAME ?? 'Supporter').trim();
+/** Channels the Supporter role sees on top of the boosted ones. */
+const SUPPORTER_CHANNELS = (process.env.SUPPORTER_CHANNELS ?? 'polls,supporters-lounge')
+  .split(',').map((s) => s.trim()).filter(Boolean);
 const BOOSTER_CHANNELS = (process.env.BOOSTER_CHANNELS || 'dev-builds,behind-the-scenes')
   .split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -369,6 +376,61 @@ async function retriage(thread) {
 // ---- what a boost unlocks ------------------------------------------------------------------
 
 /**
+ * The Supporter role: everything a booster gets, given by hand. Lovkar wanted a way to thank
+ * people who help without boosting - a tester, someone who sent a fix, a Ko-fi - so this is the
+ * booster role's twin: same colour, shown the same way in the member list, opened to the same
+ * channels, and created here if it does not exist yet. Nobody gets it automatically; it is his to
+ * hand out in the member settings.
+ */
+async function supporterRole(g) {
+  if (!SUPPORTER_ROLE) return null;
+  const found = g.roles.cache.find((r) => r.name.toLowerCase() === SUPPORTER_ROLE.toLowerCase());
+  if (found) return found;
+  if (DRY) { log(`  supporter: would create the "${SUPPORTER_ROLE}" role`); return null; }
+  const booster = g.roles.premiumSubscriberRole;
+  const shape = {
+    name: SUPPORTER_ROLE,
+    colors: { primaryColor: booster?.color || 0xf47fff },   // Discord's booster pink when nobody has boosted yet
+    hoist: booster ? booster.hoist : true,
+    mentionable: false,
+    permissions: booster ? booster.permissions : [],
+    reason: 'Supporter: the booster perks, handed out by Lovkar',
+  };
+  try {
+    const role = await g.roles.create(booster ? { ...shape, position: booster.position } : shape);
+    log(`  supporter: created the "${role.name}" role`);
+    return role;
+  } catch (e) {
+    // the position may be above the bot's own role - try again without insisting on it
+    try {
+      const role = await g.roles.create(shape);
+      log(`  supporter: created the "${role.name}" role (below the bot's own role)`);
+      return role;
+    } catch (e2) {
+      log(`  supporter: could not create the role: ${e2.message}`);
+      return null;
+    }
+  }
+}
+
+/** Open the boosted channels to a role, once; already open is left alone. */
+async function openChannels(role, g, what, names = BOOSTER_CHANNELS) {
+  for (const name of names) {
+    const ch = g.channels.cache.find((c) => c.name === name && c.permissionOverwrites);
+    if (!ch) { log(`  ${what}: no channel #${name} (skipped)`); continue; }
+    const has = ch.permissionOverwrites.cache.get(role.id);
+    if (has && has.allow.has(PermissionsBitField.Flags.ViewChannel)) continue;
+    if (DRY) { log(`  ${what}: would open #${name} to ${role.name}`); continue; }
+    try {
+      await ch.permissionOverwrites.edit(role, { ViewChannel: true }, { reason: `${role.name}s see the boosted channels` });
+      log(`  ${what}: #${name} opened to ${role.name}`);
+    } catch (e) {
+      log(`  ${what}: could not open #${name}: ${e.message}`);
+    }
+  }
+}
+
+/**
  * Give the Server Booster role sight of the channels a boost is meant to open.
  *
  * <p>Discord creates that role lazily - it does not exist at all while the server has no boosts -
@@ -379,19 +441,11 @@ async function retriage(thread) {
  */
 async function boosterPerks(g) {
   const role = g.roles.premiumSubscriberRole;
-  if (!role) return;                                     // nobody has boosted yet
-  for (const name of BOOSTER_CHANNELS) {
-    const ch = g.channels.cache.find((c) => c.name === name && c.permissionOverwrites);
-    if (!ch) { log(`  boost: no channel #${name} (skipped)`); continue; }
-    const has = ch.permissionOverwrites.cache.get(role.id);
-    if (has && has.allow.has(PermissionsBitField.Flags.ViewChannel)) continue;
-    if (DRY) { log(`  boost: would open #${name} to ${role.name}`); continue; }
-    try {
-      await ch.permissionOverwrites.edit(role, { ViewChannel: true }, { reason: 'server boosters see the boosted channels' });
-      log(`  boost: #${name} opened to ${role.name}`);
-    } catch (e) {
-      log(`  boost: could not open #${name}: ${e.message}`);
-    }
+  if (role) await openChannels(role, g, 'boost');       // nobody has boosted yet otherwise
+  const supporter = await supporterRole(g);
+  if (supporter) {
+    await openChannels(supporter, g, 'supporter');
+    await openChannels(supporter, g, 'supporter', SUPPORTER_CHANNELS);
   }
 }
 
@@ -428,6 +482,8 @@ client.once(Events.ClientReady, async (c) => {
     // releases.js counts its own; a second count here would double it on the dashboard
     releases.start(c, { log, guildId: GUILD_ID })
       .catch((e) => log('[release]', e.message));
+    bump.start(c, { log, guildId: GUILD_ID });
+    votes.start(c, { log, guildId: GUILD_ID });
   }
 
   // The slash commands go up per guild, which is instant, so a change here is live on the next
@@ -507,6 +563,7 @@ client.on(Events.InteractionCreate, (i) => {
 // The suggestion board: 👍 and 👎 put on every idea as it arrives, and the score kept up to date.
 client.on(Events.MessageCreate, (m) => {
   suggestions.onMessage(m, log).catch?.((e) => log('[suggest]', e.message));
+  if (!DRY) { try { bump.onMessage(m, log); } catch (e) { log('[bump]', e.message); } }
 });
 client.on(Events.MessageReactionAdd, (r, u) => {
   suggestions.onReaction(r, u, log).catch?.((e) => log('[suggest]', e.message));

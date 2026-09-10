@@ -227,6 +227,45 @@ Nothing older than `RELEASE_MAX_AGE_HOURS` is ever posted, and everything alread
 the first start is marked seen, so switching this on cannot dump the back catalogue into
 `#announcements`.
 
+## The bump reminder
+
+Server-listing bots (DISBOARD and its kind) put the server at the top of their list when someone
+types `/bump`, and then make everyone wait two hours. A bot may not bump for you - that is against
+their rules and Discord's, and gets a server delisted - so Sentinel only keeps the clock: it reads
+the listing bot's own reply ("Bump done", or "please wait another N minutes"), remembers when the
+next bump is allowed, and pings Lovkar in that channel the moment it is. One reminder per bump and,
+if it goes unanswered, a nudge every `BUMP_NUDGE_MIN` minutes (never more than one an hour). The
+clock is in the book, so a restart does not lose it.
+
+`BUMP_BOTS` lists the bots as `name:botId:cooldownMinutes` (default
+`disboard:302050872383242240:120,discadia:*:120`; a `*` matches the bot by its username, and a
+cooldown the bot states itself - "next bump in 6 hours" - beats the configured one), `BUMP_CHANNEL`
+sends the ping somewhere else than where the bump was typed, `BUMP_DM=1` adds a DM, `BUMP_ENABLED=0`
+switches it off.
+
+## Discadia votes
+
+Discadia can call a URL for every vote a listed server gets (`user_id`, `guild_id`, `server_slug`,
+`vote_url` - nothing signed, no header), and Sentinel is that URL. Each vote is counted in the book
+(per person, per month, all time), thanked in `#votes` with the voter's name and their count -
+nobody is pinged - and the voter gets the `Voter` role. A retry within a minute is the same vote; a
+vote for another server's `guild_id` is refused.
+
+The address is `DASH_BASE_URL/hooks/discadia/<VOTE_HOOK_TOKEN>`: the token is the whole secret, so
+it lives in the env file, is shown only on the dashboard's Bot tab (with a copy button) and is pasted
+into Discadia → Edit listing → Vote Webhooks by hand. The `Voter` role is Sentinel's to give (Discadia's
+own role picker never listed the roles this bot had created) and to take back: a sweep removes it
+`VOTE_ROLE_DAYS` (7) after the person's last vote, so a Voter is somebody who voted this week.
+`VOTE_CHANNEL`, `VOTE_ROLE` and `VOTE_QUIET=1` adjust the rest; without a token the path does not exist.
+
+## The Supporter role
+
+`SUPPORTER_ROLE_NAME` (default `Supporter`) is the booster role's twin, made for the people who help
+without boosting: created on the first start if it does not exist, in the booster pink, shown
+separately in the member list, and opened to the same `BOOSTER_CHANNELS` plus `SUPPORTER_CHANNELS`
+(default `polls,supporters-lounge`). Nobody gets it on their own; Lovkar hands it out in the member
+settings. An empty name switches it off.
+
 ## The suggestion board
 
 The two reactions go on automatically, which is the whole trick: a suggestion with no reactions
@@ -353,6 +392,9 @@ them empty and it does not start, and everything else carries on regardless.
 
     bot.js           gateway wiring: join → role, new forum post → triage, boost → channels
     web.js           the dashboard: OAuth2 sign-in, the API, and the page
+    bump.js          the bump reminder - the listing bot's clock and the ping
+    votes.js         Discadia's vote webhook: the count, the thank-you and the Voter role
+    notify.js        a DM and a moderator mention for every new bug report
     triage.js        the keyword classifier and the floor rules
     llm.js           the optional model pass and the Gemini key ring
     test.js          the classifier's tests

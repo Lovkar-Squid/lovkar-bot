@@ -127,7 +127,7 @@ async function drawsA(what, over) {
 }
 
 // ---- a member, a channel, and somewhere to write it down ------------------------------------------
-function fakeChannel(name = 'welcome') {
+function fakeChannel(name = 'joins') {
   const sent = [];
   return {
     id: 'c1', name, type: 0, sent,
@@ -244,7 +244,7 @@ function reload({ hide = false } = {}) {
     const channel = fakeChannel();
     const member = fakeMember(channel);
     const out = await wel.join(member, { log: quiet });
-    if (!out.posted) fail('a join in a server with a #welcome should post: ' + out.why);
+    if (!out.posted) fail('a join in a server with a #joins should post: ' + out.why);
     if (out.drew !== canDraw) fail(`drew should say which path it took: ${out.drew} with canDraw ${canDraw}`);
     if (channel.sent.length !== 1) fail('one message expected, got ' + channel.sent.length);
     const msg = channel.sent[0] || {};
@@ -268,13 +268,13 @@ function reload({ hide = false } = {}) {
     wel.CONF.text = was;
   }
 
-  // no #welcome: one line in the log, and nothing else at all
+  // no #joins: one line in the log, and nothing else at all
   {
     const elsewhere = fakeChannel('general');
     const member = fakeMember(elsewhere);
     const said = [];
     const out = await wel.join(member, { log: (m) => said.push(m) });
-    if (out.posted) fail('there is no #welcome, so nothing should have been posted');
+    if (out.posted) fail('there is no #joins, so nothing should have been posted');
     if (elsewhere.sent.length) fail('nothing should have been posted anywhere else either');
     if (said.length !== 1) fail('a missing channel is worth exactly one line: ' + said.length);
   }

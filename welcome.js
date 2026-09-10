@@ -3,7 +3,7 @@
  *
  * <p>A join is the one moment the bot has somebody's full attention, and "@somebody just walked in"
  * spends it on nothing. This draws a card instead - the mod's own background, the member's avatar,
- * their name large enough to read from the channel list - and posts that in #welcome. It is the
+ * their name large enough to read from the channel list - and posts that in #joins. It is the
  * same information; it just looks like somebody meant it.</p>
  *
  * <p>The drawing is done by <code>@napi-rs/canvas</code>, which is an <em>optional</em> dependency
@@ -22,6 +22,13 @@
  * card is drawn to look right without one. What it cannot survive is an image with no fonts in it
  * at all - the library ships none of its own - so that case is noticed and refused rather than
  * posted as a picture with no words on it.</p>
+ *
+ * <p>The channel is <b>#joins</b>, which is where Discord's own join messages go, so the card and
+ * the system line sit together instead of the arrival being announced twice in two places. It is
+ * the default in code rather than an environment variable because CasaOS owns this app's
+ * environment block on the server and rewrites it from its own store - a variable added there by
+ * hand does not survive the next start. WELCOME_CHANNEL still overrides it where the environment
+ * can be trusted.</p>
  *
  * <p>{@link card} is handed a plain object rather than a discord.js member on purpose. It means the
  * drawing can be tested without Discord anywhere near it, and it keeps {@link join} down to what it
@@ -51,7 +58,7 @@ try {
 }
 
 const CONF = {
-  channel: process.env.WELCOME_CHANNEL || 'welcome',              // a channel name or an id
+  channel: process.env.WELCOME_CHANNEL || 'joins',                // a channel name or an id
   background: process.env.WELCOME_BACKGROUND || '/data/welcome-bg.jpg',
   text: process.env.WELCOME_TEXT || '<@id> just walked in.',
   font: process.env.WELCOME_FONT || '',                           // a .ttf, or nothing

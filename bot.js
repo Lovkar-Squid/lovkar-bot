@@ -38,6 +38,7 @@ const suggestions = require('./suggestions');
 const milestones = require('./milestones');
 const rolemenu = require('./rolemenu');
 const welcome = require('./welcome');
+const notify = require('./notify');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
@@ -290,6 +291,13 @@ async function onNewPost(thread) {
   let verdict = triage.classify(thread.name, body, files);
   const second = await llm.ask(thread.name, body);
   verdict = triage.reconcile(verdict, second, text);
+
+  // Lovkar hears about every report the moment it lands - a DM and a mention in the moderators'
+  // channel (notify.js) - before the tag check below, because a reporter can pick a severity tag
+  // when posting and that must not make the report silent.
+  if (!DRY) {
+    await notify.bugReport(thread, verdict, starter, { log }).catch((e) => log(`[notify] ${e.message}`));
+  }
 
   // a human who already tagged the post knows better than I do
   const already = thread.appliedTags || [];

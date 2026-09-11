@@ -925,6 +925,7 @@ async function drawBot() {
       '<div class="stat"><b>' + (s.ogGiven ?? 0) + '</b><span class="dim small">OG badges</span></div>' +
       '<div class="stat"><b>' + (s.videosPosted ?? 0) + '</b><span class="dim small">videos announced</span></div>' +
       '<div class="stat"><b>' + (s.votes ? s.votes.total : 0) + '</b><span class="dim small">Discadia votes</span></div>' +
+      '<div class="stat"><b>' + (s.boostsThanked ?? 0) + '</b><span class="dim small">boosts thanked</span></div>' +
     '</div>' +
     '<p class="dim small" style="margin:-6px 0 16px">Totals since the bot first ran' +
       (s.since ? ' — this run: ' + Object.entries(s.since).filter(([, n]) => n).map(([k, n]) => n + ' ' + k).join(', ') || ' — nothing yet this run' : '') + '</p>' +

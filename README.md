@@ -11,9 +11,11 @@ what Discord cannot be asked about:
    the post has no log in it — plus a short reply saying what is missing.
 3. **What a boost unlocks.** Discord does not create the `Server Booster` role until somebody
    actually boosts, so the channels a boost is meant to open cannot be configured beforehand.
-   The bot grants that role `View Channel` on `BOOSTER_CHANNELS` at startup and whenever the
-   roles change — so the perk turns itself on with the first boost, and channels named there
-   that do not exist yet are simply skipped.
+   The bot grants that role `View Channel` on `BOOSTER_CHANNELS` and `SUPPORTER_CHANNELS` at
+   startup and whenever the roles change — a booster sees exactly what a Supporter sees — so the
+   perk turns itself on with the first boost, and channels named there that do not exist yet are
+   simply skipped. Every boost also gets a thank-you card in `#boosts` and the booster gets the
+   `Supporter` role (see *Boosts* below).
 4. **The OG badge.** The first `OG_LIMIT` (200) people through the door keep an `OG` role. The
    role is created if it is missing, handed to everyone already here oldest-first, and to each
    new arrival while places remain. The role's own member count is the tally, so there is still
@@ -268,8 +270,30 @@ reminder more than 90 minutes late is skipped rather than posted at midnight.
 `SUPPORTER_ROLE_NAME` (default `Supporter`) is the booster role's twin, made for the people who help
 without boosting: created on the first start if it does not exist, in the booster pink, shown
 separately in the member list, and opened to the same `BOOSTER_CHANNELS` plus `SUPPORTER_CHANNELS`
-(default `polls,supporters-lounge`). Nobody gets it on their own; Lovkar hands it out in the member
-settings. An empty name switches it off.
+(default `polls,supporters-lounge`). Lovkar hands it out in the member settings, and every booster
+gets it for as long as their boost lasts. An empty name switches it off.
+
+## Boosts
+
+Discord marks a boost with one grey system line in `#joins`. `boosts.js` gives it a card of its own
+in `#boosts` — who boosted and how many times, the level it took the server to, the count now and
+how far the next level is — and hands the booster the `Supporter` role.
+
+* **What it listens to.** Discord's own boost message (types 8–11: the content is the number of
+  boosts, the type says whether a level was reached). If boost messages are switched off in Server
+  Settings, it falls back to the member's boost date instead — never both, so nothing is said twice.
+* **Saying it once.** `#boosts` is the record: a card is stamped with the boost's own time and names
+  the booster, and the last 50 messages are read before anything is posted. At startup, boosts from
+  the last `BOOST_CATCHUP_HOURS` (24) with no card yet are thanked late; older ones are left alone.
+  A restart, a lost book or a second copy of the bot finds its own cards and stays quiet.
+* **The role.** Given when the boost starts, taken back when it ends — but only if the boost gave it.
+  Who got it that way is one line in the book (`boosts:auto-supporters`); a Supporter Lovkar made by
+  hand is never touched. A sweep at startup and every `BOOST_SWEEP_MINUTES` (30) catches boosts that
+  began or ended while the bot was away. With no book the role is given but never taken.
+* **Nobody is pinged** unless `BOOST_PING=1` (then only the booster). `BOOST_CHANNEL` (default
+  `boosts`), `BOOST_SUPPORTER=0` and `BOOST_ENABLED=0` adjust the rest. The dashboard's Bot tab counts
+  the cards as *boosts thanked*.
+* `#boosts` sits in 💬 COMMUNITY, read-only like `#votes`: members read and react, Sentinel posts.
 
 ## The suggestion board
 
@@ -395,10 +419,11 @@ them empty and it does not start, and everything else carries on regardless.
 
 ## Files
 
-    bot.js           gateway wiring: join → role, new forum post → triage, boost → channels
+    bot.js           gateway wiring: join → role, new forum post → triage, boost → channels + card
     web.js           the dashboard: OAuth2 sign-in, the API, and the page
     bump.js          the bump reminder - the listing bot's clock and the ping
     votes.js         Discadia's vote webhook: the count, the thank-you and the Voter role
+    boosts.js        a card in #boosts for every boost, and Supporter for as long as it lasts
     notify.js        a DM and a moderator mention for every new bug report
     triage.js        the keyword classifier and the floor rules
     llm.js           the optional model pass and the Gemini key ring

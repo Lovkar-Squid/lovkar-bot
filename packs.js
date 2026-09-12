@@ -19,8 +19,17 @@ const db = require('./db');
 const PACKS = {
   sneak: {
     channel: process.env.PACK_SNEAK_CHANNEL || 'sneak-peek',
-    label: 'Sneak peek',
+    label: 'Sneak peek (Waking World)',
     blurb: 'A look at what is coming.',
+  },
+  // The MineColonies addons have their own category and their own audience; a screenshot of a
+  // thief's hut is not news to somebody who follows the Waking World. The channel is named
+  // differently on purpose - channels are found by name here, and two called sneak-peek would
+  // make the lookup a coin toss.
+  mcsneak: {
+    channel: process.env.PACK_MCSNEAK_CHANNEL || 'addon-sneak-peek',
+    label: 'Sneak peek (MineColonies addons)',
+    blurb: 'A look at what is coming for the addons.',
   },
   bts: {
     channel: process.env.PACK_BTS_CHANNEL || 'behind-the-scenes',
@@ -49,7 +58,7 @@ function about(kind) {
  * Post one pack.
  *
  * @param guild    the discord.js Guild
- * @param kind     'sneak' or 'bts'
+ * @param kind     one of {@link #kinds}
  * @param files    [{ name, data: Buffer }]
  * @param caption  what to say above them; the pack's own blurb if empty
  * @param who      whose name goes in the log

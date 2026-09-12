@@ -28,8 +28,11 @@ what Discord cannot be asked about:
    redeploy knows exactly as much as it did before.
 
 6. **Packs.** A handful of pictures, posted to the channel they belong in, in one go — a
-   sneak peek to `#sneak-peek` or a behind-the-scenes set to `#behind-the-scenes`. Marko does
-   it from the dashboard's Packs page; whoever is at a terminal does it with `pack.js`.
+   Waking World sneak peek to `#sneak-peek`, a MineColonies addon one to `#addon-sneak-peek`,
+   or a behind-the-scenes set to `#behind-the-scenes`. Marko does it from the dashboard's Packs
+   page; whoever is at a terminal does it with `pack.js`. The two sneak-peek channels are named
+   differently on purpose: `packs.js` finds a channel by name, and two called `sneak-peek`
+   would make that lookup a coin toss.
 
 7. **Giveaways.** A prize, a deadline and a button. People press it to enter and press it again
    to take their name back out; when the time is up the bot draws the winners itself and says so

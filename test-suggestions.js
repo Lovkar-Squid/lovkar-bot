@@ -231,6 +231,103 @@ if (sug.tally({ up: 1, down: 4, mineUp: true, mineDown: true }).score !== -3) fa
   await sug.onReaction({ partial: false, emoji: { name: '🎉' }, message: shrug }, { bot: false }, quiet);
   if (db.suggestionSeen('908')) fail('a party popper is not a vote');
 
+
+  // ---- three boards, and the hub ----------------------------------------------------------------
+  // #waking-world-ideas and #addon-ideas are watched exactly like the old one, and everything
+  // posted in them is said again in #ideas-and-feedback with the person who had it pinged.
+  sug.CONF.channels = ['ideas-and-feedback', 'waking-world-ideas', 'addon-ideas'];
+  const hub = {
+    id: 'c1',
+    name: 'ideas-and-feedback',
+    sent: [],
+    async send(payload) { this.sent.push(payload); return { id: 'h' + this.sent.length }; },
+  };
+  const ww = { id: 'c2', name: 'waking-world-ideas' };
+  const addon = { id: 'c3', name: 'addon-ideas' };
+  sug.live.boards.clear();
+  for (const c of [hub, ww, addon]) sug.live.boards.set(c.id, c);
+  sug.live.hub = hub;
+
+  const idea2 = (id, channel, over = {}) => msg({
+    id,
+    content: 'Could the map screen remember where I left it?',
+    channel,
+    channelId: channel.id,
+    author: { bot: false, tag: 'marko', id: 'u7' },
+    url: 'https://discord.com/channels/1/' + channel.id + '/' + id,
+    react: async () => {},
+    ...over,
+  });
+
+  // an idea in a category board: opened for votes there, announced in the hub
+  await sug.onMessage(idea2('910', ww), quiet);
+  if (!db.suggestionSeen('910')) fail('an idea in #waking-world-ideas should be written down');
+  if (db.suggestionSeen('910')?.channel_id !== 'c2') fail('the board it came from should be kept');
+  if (hub.sent.length !== 1) fail('it should have been announced in the hub once, was ' + hub.sent.length);
+  const ann = String(hub.sent[0]?.content || '');
+  if (!ann.includes('<#c2>')) fail('the announcement should name the board: ' + ann);
+  if (!ann.includes('<@u7>')) fail('the announcement should ping whoever had the idea: ' + ann);
+  if (!ann.includes('Could the map screen')) fail('the announcement should quote the idea: ' + ann);
+  if (!ann.includes('https://discord.com/channels/1/c2/910')) fail('the announcement should link back: ' + ann);
+  const am = hub.sent[0]?.allowedMentions;
+  if (am?.parse?.length !== 0) fail('an announcement must not ping by parsing the text');
+  if (String(am?.users) !== 'u7') fail('only the author may be pinged, not ' + JSON.stringify(am?.users));
+
+  // ...and one in the other board too
+  await sug.onMessage(idea2('911', addon), quiet);
+  if (hub.sent.length !== 2) fail('#addon-ideas should be announced as well');
+  if (!String(hub.sent[1]?.content).includes('<#c3>')) fail('the second announcement names the wrong board');
+
+  // an idea posted in the hub itself is already where announcements go
+  await sug.onMessage(idea2('912', hub), quiet);
+  if (!db.suggestionSeen('912')) fail('an idea in the hub should still be written down');
+  if (hub.sent.length !== 2) fail('the hub must not announce to itself');
+
+  // a message in a channel that is no board at all
+  await sug.onMessage(idea2('913', { id: 'c9', name: 'general' }), quiet);
+  if (db.suggestionSeen('913')) fail('#general is not a board');
+  if (hub.sent.length !== 2) fail('#general must not reach the hub');
+
+  // a channel the bot may not react in still gets its ideas into the hub
+  await sug.onMessage(idea2('914', ww, { react: async () => { throw new Error('missing permissions'); } }), quiet);
+  if (!db.suggestionSeen('914')) fail('a refused reaction should still leave a record');
+  if (hub.sent.length !== 3) fail('a refused reaction should not eat the announcement');
+
+  // a vote on something from before the bot woke up is written down but never announced
+  const late2 = idea2('915', ww, {
+    reactions: { cache: new Map([
+      ['u', { emoji: { name: sug.CONF.up }, count: 3, me: false }],
+      ['d', { emoji: { name: sug.CONF.down }, count: 0, me: false }],
+    ]) },
+  });
+  await sug.onReaction({ partial: false, emoji: { name: sug.CONF.up }, message: late2 }, { bot: false }, quiet);
+  if (db.suggestionSeen('915')?.up !== 3) fail('a late vote should still be counted');
+  if (hub.sent.length !== 3) fail('an idea found days later must not be announced as news');
+
+  // SUGGESTION_MIRROR=0 leaves the boards alone
+  sug.CONF.mirror = '0';
+  if (sug.mirrorTo() !== null) fail('SUGGESTION_MIRROR=0 should mean no hub');
+  await sug.onMessage(idea2('916', ww), quiet);
+  if (!db.suggestionSeen('916')) fail('the votes should carry on with the announcements off');
+  if (hub.sent.length !== 3) fail('SUGGESTION_MIRROR=0 should announce nothing');
+  sug.CONF.mirror = '';
+
+  // ---- the digest across three boards ------------------------------------------------------------
+  db.suggestionNew({ id: 'j', channelId: 'c2', author: 'marko', excerpt: 'idea j', url: 'https://discord.com/j', at: now - DAY });
+  db.suggestionScore('j', 10, 0);
+  hub.sent.length = 0;
+  await sug.digest(hub, { log: quiet, now, force: true });
+  const dtext = String(hub.sent[0]?.content || '');
+  if (!dtext.includes('<#c2>')) fail('the digest should say which board an idea came from:\n' + dtext);
+  if (dtext.includes('<#c1>')) fail('the hub should not label its own ideas:\n' + dtext);
+  if (dtext.indexOf('idea j') > dtext.indexOf('idea f')) fail('the digest is no longer in score order:\n' + dtext);
+  if (hub.sent[0]?.allowedMentions?.parse?.length !== 0) fail('the digest must still not ping anybody');
+
+  // a board renamed while the bot is up is still matched by its id
+  sug.live.boards.set('c2', { id: 'c2', name: 'ideas-waking-world' });
+  if (!sug.isBoard({ id: 'c2', name: 'ideas-waking-world' })) fail('a renamed board should still be a board');
+  if (sug.isBoard({ id: 'c9', name: 'general' })) fail('#general still is not one');
+
   db.close();
   fs.rmSync(dir, { recursive: true, force: true });
   console.log(bad ? `${bad} case(s) failed` : 'all suggestion cases pass');

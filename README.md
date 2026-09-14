@@ -47,9 +47,11 @@ what Discord cannot be asked about:
 9. **Releases.** A new file on Modrinth or CurseForge is announced in `#announcements` the same
    way a new video is, with its changelog, and published to the servers that follow.
 
-10. **The suggestion board.** Every idea posted in `#ideas-and-feedback` gets its 👍 and 👎 the
-    moment it arrives, so nobody has to add them, and once a week the best five are collected
-    into one message. A week with nothing above zero posts nothing at all.
+10. **The suggestion boards.** Every idea posted in `#ideas-and-feedback`, `#waking-world-ideas`
+    or `#addon-ideas` gets its 👍 and 👎 the moment it arrives, so nobody has to add them. An idea
+    posted in one of the two category boards is announced in `#ideas-and-feedback` with whoever
+    had it pinged, so three rooms stay one audience, and once a week the best five across all
+    three are collected into one message there. A week with nothing above zero posts nothing.
 
 11. **The queue.** Twenty screenshots taken in one good evening, dropped on the dashboard at
     once, become a sneak peek every three days for a month. They wait on the same volume as the
@@ -298,16 +300,44 @@ how far the next level is — and hands the booster the `Supporter` role.
   the cards as *boosts thanked*.
 * `#boosts` sits in 💬 COMMUNITY, read-only like `#votes`: members read and react, Sentinel posts.
 
-## The suggestion board
+## The suggestion boards
 
 The two reactions go on automatically, which is the whole trick: a suggestion with no reactions
 gets none, and a suggestion with two gets fifty. Bots, one-word replies and bare links are left
 alone. The score is recounted from the message rather than incremented, so a duplicate event or a
 day of downtime cannot make it drift.
 
-The weekly digest posts the best five of the last seven days. A week where nothing scored above
-zero posts nothing - an empty "top ideas" is worse than silence - but the clock still winds on,
-so the first upvote of the new week does not fire a digest of one.
+`SUGGESTION_CHANNEL` is a list, and the first one in it is the hub:
+
+    SUGGESTION_CHANNEL=ideas-and-feedback,waking-world-ideas,addon-ideas
+    SUGGESTION_MIRROR=ideas-and-feedback
+
+Three boards is the thing that quietly kills a suggestion channel - an idea in `#addon-ideas` is
+read by the people who were already in `#addon-ideas`, which on a given evening is nobody. So an
+idea posted in either category board is announced in the hub as it arrives, naming the person who
+had it. That mention is a real ping, on purpose: a board that tells you your idea was seen is
+worth several that file it silently, and it is the one ping in this bot that the person being
+pinged asked for by posting. Nothing else in the line may ping anything - the text is somebody's
+own words, so a stray `@everyone` in it is let through as text and no further.
+
+The votes stay on the original and are deliberately not repeated on the announcement: two ballot
+boxes for one idea would split the count in half and neither half would be the answer. Only a
+message posted while the bot is up is announced - one found days later by a vote on it is written
+into the book and left alone, because a hub that announces last Tuesday's ideas on Friday is a hub
+nobody reads. `SUGGESTION_MIRROR=0` switches the announcements off and leaves the reactions.
+
+The weekly digest posts the best five of the last seven days across every board, in the hub, each
+line saying which board it came from. A week where nothing scored above zero posts nothing - an
+empty "top ideas" is worse than silence - but the clock still winds on, so the first upvote of the
+new week does not fire a digest of one.
+
+A board named in the setting that does not exist is one line in the log and nothing more, which is
+also how one is added: put it in the setting, restart, then make the channel. `probe-boards.js`
+answers the other half of the question - whether the bot may actually read and react in each of
+them, which no test can see, since a channel with no overwrites of its own inherits its category's:
+
+    docker run --rm --env-file .env.compose -v $PWD/probe-boards.js:/app/probe-boards.js:ro \
+      -w /app lovkar-bot:latest node probe-boards.js
 
 ## The queue
 

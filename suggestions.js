@@ -1,11 +1,19 @@
 /**
- * The suggestion board: a pair of reactions on every idea, and one count of them a week.
+ * The suggestion boards: a pair of reactions on every idea, one count of them a week, and - now
+ * that there is more than one board - every idea said again in the one channel everybody reads.
  *
- * <p>#ideas-and-feedback is an ordinary text channel, so an idea posted there arrives as a message
- * like any other and nothing about it says "vote on this". The bot puts the 👍 and the 👎 on it
- * itself, which is the whole of the trick: a poll nobody had to set up, on a message nobody had to
- * format. Those two reactions are the ballot box rather than votes, so the bot's own are taken back
- * off the count before anything is written down.</p>
+ * <p>A board is an ordinary text channel, so an idea posted there arrives as a message like any
+ * other and nothing about it says "vote on this". The bot puts the 👍 and the 👎 on it itself,
+ * which is the whole of the trick: a poll nobody had to set up, on a message nobody had to format.
+ * Those two reactions are the ballot box rather than votes, so the bot's own are taken back off the
+ * count before anything is written down.</p>
+ *
+ * <p>There are three boards now - one for each half of the server and the old general one - and
+ * three boards is the thing that quietly kills a suggestion channel: an idea in #addon-ideas is
+ * read by the people who were already in #addon-ideas, which on any given evening is nobody. So
+ * the first board in the list is the <b>hub</b>: everything posted in any of the others is
+ * announced there, naming the person who had it, and the week's digest is posted there too. The
+ * votes stay on the original and are deliberately not repeated - see {@link announce}.</p>
  *
  * <p>Discord keeps the votes. They sit on the message where everyone can see them and change their
  * mind, and they can be read back off the gateway at any time, so the book is not the record here -
@@ -16,8 +24,8 @@
  *
  * <p>Nothing here wires an event handler. bot.js does that, and hands {@link onMessage} every
  * message in the server and {@link onReaction} every reaction in it; both begin by asking whether
- * it was their channel and go back where they came from when it was not. Neither ever throws:
- * a suggestion that could not be reacted to is a line in the log, not a dead handler.</p>
+ * it was one of their channels and go back where they came from when it was not. Neither ever
+ * throws: a suggestion that could not be reacted to is a line in the log, not a dead handler.</p>
  */
 
 'use strict';
@@ -37,8 +45,21 @@ const DAY = 86400000;
 /** Where the date of the last digest lives. */
 const CLOCK = 'suggestions:digest';
 
+/** A comma-separated setting, as a list, with the # people habitually type taken off the front. */
+function list(text, fallback = []) {
+  const out = String(text ?? '')
+    .split(',')
+    .map((s) => s.trim().replace(/^#/, ''))
+    .filter(Boolean);
+  return out.length ? out : fallback;
+}
+
 const CONF = {
-  channel: process.env.SUGGESTION_CHANNEL || 'ideas-and-feedback',
+  // The boards, in order, by name or by id. The first one is the hub: the digest goes there, and
+  // an idea posted in any of the others is announced there as well.
+  channels: list(process.env.SUGGESTION_CHANNEL, ['ideas-and-feedback']),
+  // Where those announcements go. Unset means the first board; SUGGESTION_MIRROR=0 turns them off.
+  mirror: process.env.SUGGESTION_MIRROR ?? '',
   up: process.env.SUGGESTION_UP || '👍',
   down: process.env.SUGGESTION_DOWN || '👎',
   minChars: Number(process.env.SUGGESTION_MIN_CHARS || 12),
@@ -72,6 +93,18 @@ function attached(message) {
 function excerpt(text, n = EXCERPT) {
   const s = String(text ?? '').replace(/\s+/g, ' ').trim();
   return s.length <= n ? s : s.slice(0, n - 1).trimEnd() + '…';
+}
+
+/**
+ * As much of what somebody posted as is worth carrying elsewhere - what they wrote, or, when the
+ * idea is the picture and not the words, what came with it. The book and the announcement both
+ * quote this, so they cannot disagree about what an idea was.
+ */
+function gist(message) {
+  const text = excerpt(String(message?.content ?? '').trim());
+  if (text) return text;
+  const n = attached(message);
+  return n ? `(${n} attachment${n === 1 ? '' : 's'})` : '';
 }
 
 /**
@@ -140,46 +173,121 @@ function ago(ms) {
   return h >= 1 ? `${h} hour${h === 1 ? '' : 's'} ago` : 'less than an hour ago';
 }
 
-// ---- the board ----------------------------------------------------------------------------------
+/**
+ * The name or id of the channel new ideas are announced in, or null when nobody wants that.
+ *
+ * <p>Unset means the first board, which is the useful default: the hub is the channel that was
+ * there before the category ones and the one people already have open.</p>
+ */
+function mirrorTo() {
+  const m = String(CONF.mirror ?? '').trim().replace(/^#/, '');
+  const off = m.toLowerCase();
+  if (m === '0' || off === 'off' || off === 'none' || off === 'no') return null;
+  return m || CONF.channels[0] || null;
+}
+
+// ---- the boards ---------------------------------------------------------------------------------
 
 /**
- * The channel's id once start() has found it. Both handlers are called for everything that happens
- * in the server, so they need to answer "is this mine?" without a lookup; matching on the id is
- * that, and it keeps working if the channel is renamed while the bot is up.
+ * What start() found: every board by id, and the channel ideas are announced in.
+ *
+ * <p>Both handlers are called for everything that happens in the server, so they need to answer
+ * "is this mine?" without a lookup; matching on the id is that, and it keeps working if a channel
+ * is renamed while the bot is up. Exported so the test can stand in for start() without a Discord
+ * client anywhere near it.</p>
  */
-let boardId = null;
+const live = { boards: new Map(), hub: null };
 
 function isBoard(channel) {
   if (!channel) return false;
-  if (boardId && channel.id === boardId) return true;
-  const want = String(CONF.channel).replace(/^#/, '').toLowerCase();
-  return channel.id === want || String(channel.name || '').toLowerCase() === want;
+  if (live.boards.has(channel.id)) return true;
+  const name = String(channel.name || '').toLowerCase();
+  return CONF.channels.some((want) => {
+    const w = String(want).replace(/^#/, '').toLowerCase();
+    return channel.id === w || (Boolean(name) && name === w);
+  });
 }
 
 function inBoard(message) {
   if (!message) return false;
-  if (boardId && (message.channelId === boardId || message.channel?.id === boardId)) return true;
+  const id = message.channelId || message.channel?.id;
+  if (id && live.boards.has(id)) return true;
   return isBoard(message.channel);
 }
 
 /** Write the message down as a suggestion. Doing it before reacting means a refused reaction still leaves a record. */
 function record(message) {
-  const text = String(message.content ?? '').trim();
   db.suggestionNew({
     id: message.id,
     channelId: message.channelId || message.channel?.id || null,
     author: message.author?.tag || message.author?.username || null,
-    excerpt: excerpt(text) || `(${attached(message)} attachment${attached(message) === 1 ? '' : 's'})`,
+    excerpt: gist(message),
     url: message.url || null,
     at: Number(message.createdTimestamp) || Date.now(),
   });
 }
 
 /**
- * Somebody posted. If it looks like an idea, it gets a ballot box.
+ * An idea posted in one of the category boards, said again in the hub.
  *
- * <p>Called for every message in the server, so the cheap question - was this even my channel -
- * is asked first.</p>
+ * <p>The person who had it is pinged, on purpose and by name: a board that tells you your idea was
+ * seen is worth several that file it silently, and it is the one ping in this bot that the person
+ * being pinged asked for by posting. Nothing else in the line may ping anybody - the text is
+ * somebody's own words and a stray @everyone in an excerpt would otherwise go off for the whole
+ * server - so the author's id is the only thing allowed through.</p>
+ *
+ * <p>The votes stay on the original and are deliberately not repeated here: two ballot boxes for
+ * one idea would split the count in half and neither half would be the answer. This message is a
+ * signpost. It needs no guard against being opened for votes itself, because it comes from a bot
+ * and {@link worthVotingOn} says no to those first.</p>
+ *
+ * <p>Only {@link onMessage} calls this, so only an idea posted while the bot was up is announced.
+ * One found days later by a vote on it is written into the book and left alone: a hub that
+ * announces last Tuesday's ideas on Friday is a hub nobody reads. The same reason the book is
+ * checked before any of this runs - a redelivered message must not be announced twice.</p>
+ */
+async function announce(message, log = () => {}) {
+  try {
+    const want = mirrorTo();
+    if (!want) return false;
+    const from = message?.channel;
+    if (!from) return false;
+
+    const to = live.hub || findChannel(message.guild || from.guild, want);
+    // Nothing announces itself: an idea posted in the hub is already in the hub.
+    if (!to || to.id === from.id) return false;
+
+    const who = message.author?.id ? `<@${message.author.id}>` : (message.author?.tag || 'somebody');
+    const where = from.id ? `<#${from.id}>` : `#${from.name || 'somewhere'}`;
+    const body = gist(message) || 'an idea';
+    const vote = message.url
+      ? `${CONF.up} ${CONF.down} [vote on it here](${message.url})`
+      : `${CONF.up} ${CONF.down} on the original`;
+
+    await to.send({
+      content: `**A new idea in ${where}**  ·  ${who}\n> ${body}\n${vote}`,
+      // Only the author, and nothing the excerpt might contain.
+      allowedMentions: message.author?.id
+        ? { parse: [], users: [String(message.author.id)] }
+        : { parse: [] },
+    });
+    db.event('suggestions', 'announced', `${message.author?.tag || '?'} in #${from.name || from.id}`);
+    log(`[suggestions] an idea in #${from.name || from.id} announced in #${to.name || to.id}`);
+    return true;
+  } catch (e) {
+    log(`[suggestions] could not announce ${message?.id} in the hub: ${e.message}`);
+    return false;
+  }
+}
+
+/**
+ * Somebody posted. If it looks like an idea, it gets a ballot box - and, unless it was posted in
+ * the hub, a line in the hub saying so.
+ *
+ * <p>Called for every message in the server, so the cheap question - was this even one of my
+ * channels - is asked first. The three steps after that are each on their own: a channel the bot
+ * may not react in still gets its ideas announced, and an announcement that fails leaves the
+ * reactions where they are.</p>
  */
 async function onMessage(message, log = () => {}) {
   try {
@@ -189,13 +297,18 @@ async function onMessage(message, log = () => {}) {
 
     record(message);
     db.bump('suggestions');
-    // One after the other rather than both at once: in parallel they land in whichever order
-    // Discord answers, and a 👎 sitting first reads like the bot has an opinion.
-    await message.react(CONF.up);
-    await message.react(CONF.down);
+    try {
+      // One after the other rather than both at once: in parallel they land in whichever order
+      // Discord answers, and a 👎 sitting first reads like the bot has an opinion.
+      await message.react(CONF.up);
+      await message.react(CONF.down);
+    } catch (e) {
+      log(`[suggestions] could not open ${message.id} for votes: ${e.message}`);
+    }
+    await announce(message, log);
     return true;
   } catch (e) {
-    log(`[suggestions] could not open ${message?.id} for votes: ${e.message}`);
+    log(`[suggestions] could not take in ${message?.id}: ${e.message}`);
     return false;
   }
 }
@@ -239,7 +352,8 @@ async function onReaction(reaction, user, log = () => {}) {
     if (!isBoard(message.channel)) return false;
 
     // A vote on something posted while the bot was away: the message is not in the book, but the
-    // votes on it are real. Write it down now rather than throwing the count away.
+    // votes on it are real. Write it down now rather than throwing the count away - and only write
+    // it down, because announcing an idea days after it was posted is noise, not news.
     if (!db.suggestionSeen(message.id)) {
       if (!worthVotingOn(message)) return false;
       record(message);
@@ -254,7 +368,9 @@ async function onReaction(reaction, user, log = () => {}) {
 }
 
 /**
- * The week's best ideas, in the channel they were posted in.
+ * The week's best ideas, in the hub - across every board, because an idea does not become a
+ * different idea for having been posted in the addon half of the server. Each line says which
+ * board it came from once there is more than one, so the link is not the only way to find out.
  *
  * <p>Nothing is posted unless something was actually voted for. An empty digest - or one made of
  * ideas nobody wanted - is worse than silence, because it teaches the channel to ignore the
@@ -265,7 +381,7 @@ async function onReaction(reaction, user, log = () => {}) {
  * is the same length as the gap between digests, so anything old enough to have been in the last
  * one has already fallen out of the back of the window.</p>
  *
- * @param channel  where to post, and the same channel the suggestions were posted in
+ * @param channel  where to post - the hub
  * @param force    post now whatever the clock says (and whether or not the digest is switched off)
  */
 async function digest(channel, { log = () => {}, now = Date.now(), force = false } = {}) {
@@ -284,16 +400,19 @@ async function digest(channel, { log = () => {}, now = Date.now(), force = false
     return null;
   }
 
+  const many = live.boards.size > 1 || CONF.channels.length > 1;
   const lines = top.map((s, i) => {
     // Square brackets inside the text of a masked link break it, so they come out of the excerpt.
     const what = excerpt(s.excerpt || 'a suggestion', LINE).replace(/[[\]]/g, '');
+    const from = many && s.channel_id && s.channel_id !== channel.id ? `  ·  <#${s.channel_id}>` : '';
     return `${i + 1}.  **+${s.score}**  ${s.url ? `[${what}](${s.url})` : what}`
-      + (s.author ? `  ·  ${s.author}` : '');
+      + (s.author ? `  ·  ${s.author}` : '') + from;
   });
   const heading = days === 7 ? 'Top ideas this week' : `Top ideas of the last ${days} days`;
 
   // Nothing in here may ping anybody: the text is other people's words, and a name or a stray
-  // @everyone in an excerpt would otherwise go off once a week for the whole server.
+  // @everyone in an excerpt would otherwise go off once a week for the whole server. A <#channel>
+  // is not a ping and stays a link.
   await channel.send({
     content: `**${heading}**\n${lines.join('\n')}`,
     allowedMentions: { parse: [] },
@@ -303,7 +422,7 @@ async function digest(channel, { log = () => {}, now = Date.now(), force = false
   db.set(CLOCK, String(now));
   db.event('suggestions', 'digest', `${top.length} idea(s), best +${top[0].score}`);
   db.bump('digests');
-  log(`[suggestions] digest posted in #${channel.name || CONF.channel} - ${top.length} idea(s),`
+  log(`[suggestions] digest posted in #${channel.name || CONF.channels[0]} - ${top.length} idea(s),`
     + ` best +${top[0].score}`);
   return { posted: top.length, top };
 }
@@ -317,27 +436,55 @@ function findChannel(guild, name) {
 }
 
 /**
- * Find the board, say what is on it, and start watching the clock.
+ * Find the boards, say what is on them, and start watching the clock.
  *
  * <p>This wires no event handler - bot.js owns those - so all it leaves running is the hourly
  * look at the date of the last digest. The first look happens straight away, which is what makes a
  * bot that was off for a week post that week's digest as soon as it is back.</p>
+ *
+ * <p>A board named in the setting that does not exist is a line in the log and nothing more. It is
+ * how a channel gets added: put it in the setting, restart, make it - rather than the other way
+ * round, which would take the other two boards down with it.</p>
  */
 function start(client, { log = console.log, guildId } = {}) {
   const say = log;
   const guild = guildId ? client?.guilds?.cache?.get(guildId) : client?.guilds?.cache?.first();
   if (!guild) { say('[suggestions] no guild - no board'); return null; }
-  const channel = findChannel(guild, CONF.channel);
-  if (!channel) { say(`[suggestions] no #${CONF.channel} - no board`); return null; }
-  boardId = channel.id;
+
+  live.boards.clear();
+  live.hub = null;
+  const missing = [];
+  for (const name of CONF.channels) {
+    const found = findChannel(guild, name);
+    if (found) live.boards.set(found.id, found);
+    else missing.push(name);
+  }
+  if (!live.boards.size) {
+    say(`[suggestions] no ${CONF.channels.map((n) => '#' + n).join(', ')} - no board`);
+    return null;
+  }
+  for (const name of missing) say(`[suggestions] no #${name} - that board is not being watched`);
+
+  const want = mirrorTo();
+  if (want) {
+    live.hub = findChannel(guild, want);
+    if (!live.hub) say(`[suggestions] no #${want} - new ideas are not being announced anywhere`);
+  }
+
+  // The digest goes where everybody is: the hub, or the first board that exists when there is none.
+  const channel = live.hub || [...live.boards.values()][0];
 
   const days = Math.max(1, CONF.digestDays);
   const recent = db.suggestionsSince(Date.now() - days * DAY, 100).length;
   const last = Number(db.get(CLOCK)) || 0;
-  say(`[suggestions] #${channel.name}: ${CONF.up}${CONF.down} on anything of ${CONF.minChars}`
-    + ` characters or more, ${recent} in the last ${days} days, `
+  const names = [...live.boards.values()].map((c) => '#' + c.name).join(', ');
+  say(`[suggestions] ${names}: ${CONF.up}${CONF.down} on anything of ${CONF.minChars}`
+    + ` characters or more, ${recent} in the last ${days} days`
+    + (live.hub && live.boards.size > 1 ? `, new ideas announced in #${live.hub.name}` : '')
+    + ((!live.hub && want) || !want ? ', ideas not announced anywhere' : '')
+    + ', '
     + (CONF.digest
-      ? `last digest ${last ? ago(Date.now() - last) : 'never'}`
+      ? `last digest ${last ? ago(Date.now() - last) : 'never'} (in #${channel.name})`
       : 'digest off (SUGGESTION_DIGEST=0)'));
 
   const check = () => digest(channel, { log: say }).catch((e) => say(`[suggestions] digest: ${e.message}`));
@@ -350,4 +497,7 @@ function start(client, { log = console.log, guildId } = {}) {
   };
 }
 
-module.exports = { start, onMessage, onReaction, digest, worthVotingOn, tally, due, CONF };
+module.exports = {
+  start, onMessage, onReaction, digest, announce,
+  worthVotingOn, tally, due, isBoard, mirrorTo, live, CONF,
+};
